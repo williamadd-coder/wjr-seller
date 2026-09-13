@@ -4,9 +4,16 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 function numberOrNull(value: FormDataEntryValue | null) {
-  const text = String(value ?? "").replace(",", ".").trim();
-  if (!text) return null;
-  const parsed = Number(text);
+  const raw = String(value ?? "").trim().replace(/\s/g, "");
+  if (!raw) return null;
+
+  // Seller Studio is BR-first: support 15,99, 1.234,56 and plain 1234.56.
+  // When both separators are present, dots are thousands separators and comma is decimal.
+  const normalized = raw.includes(",")
+    ? raw.replace(/\./g, "").replace(",", ".")
+    : raw;
+
+  const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
