@@ -17,7 +17,7 @@ function buildTitle(product: Record<string, any>, attributes: Record<string, unk
     .slice(0, 3).map(([, value]) => clean(value));
   const candidates = [product.brand, product.name, product.model, ...useful].map(clean).filter(Boolean);
   const unique = candidates.filter((value, index) => candidates.findIndex((item) => item.toLowerCase() === value.toLowerCase()) === index);
-  return unique.join(" ").replace(/\s+/g, " ").trim().slice(0, SHOPEE_BR_PROFILE.title.maxLength);
+  return unique.join(" ").replace(/\s+/g, " ").trim().slice(0, SHOPEE_BR_PROFILE.listing.title.maxLength);
 }
 function buildKeywords(product: Record<string, any>, attributes: Record<string, unknown>) {
   const source = [product.name, product.brand, product.model, ...confirmedTextAttributes(attributes).map(([, value]) => value)].map(clean).filter(Boolean).join(" ").toLowerCase();
@@ -39,7 +39,7 @@ function buildDescription(product: Record<string, any>, attributes: Record<strin
     "COMPRA BEM INFORMADA",
     "As informações acima usam somente dados confirmados no cadastro. Características ainda não comprovadas devem ser validadas antes da publicação para evitar promessas incorretas no anúncio.",
   ];
-  return lines.filter((line) => line !== null).join("\n").slice(0, SHOPEE_BR_PROFILE.description.maxLength);
+  return lines.filter((line) => line !== null).join("\n").slice(0, SHOPEE_BR_PROFILE.listing.description.maxLength);
 }
 
 export async function optimizeShopee(productId: string) {
