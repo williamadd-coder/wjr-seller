@@ -33,5 +33,5 @@ export async function createProductDraft(formData: FormData) {
   };
   const { data, error } = await supabase.from("products").insert(payload).select("id").single();
   if (error) redirect(`/studio/new?error=${encodeURIComponent(error.message)}`);
-  redirect(`/products/${data.id}?generate=1`);
+  redirect(`/products/${data.id}/review?generate=1`);
 }
