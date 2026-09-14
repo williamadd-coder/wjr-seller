@@ -1,6 +1,5 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 function numberOrNull(value: FormDataEntryValue | null) {
@@ -16,9 +15,9 @@ export async function createProductDraft(formData: FormData) {
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = claimsData?.claims?.sub;
-  if (!userId) redirect("/login");
+  if (!userId) return { error: "Sua sessão expirou. Entre novamente." };
   const name = String(formData.get("name") ?? "").trim();
-  if (!name) redirect("/studio/new?error=Informe o nome do produto");
+  if (!name) return { error: "Informe o nome do produto." };
 
   const sourceData = {
     marketplace: "shopee", ingestion: "seller_studio_manual",
@@ -32,6 +31,6 @@ export async function createProductDraft(formData: FormData) {
     source_data: sourceData,
   };
   const { data, error } = await supabase.from("products").insert(payload).select("id").single();
-  if (error) redirect(`/studio/new?error=${encodeURIComponent(error.message)}`);
-  redirect(`/products/${data.id}/review?generate=1`);
+  if (error) return { error: error.message };
+  return { id: data.id as string };
 }
