@@ -1,0 +1,7 @@
+"use server";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+
+function num(value: FormDataEntryValue | null){const raw=String(value??"").trim();if(!raw)return 0;const normalized=raw.includes(",")?raw.replace(/\./g,"").replace(",","."):raw;const parsed=Number(normalized);return Number.isFinite(parsed)&&parsed>=0?parsed:null;}
+export async function saveMarketplacePricingSettings(formData:FormData){const supabase=await createClient();const{data:claims}=await supabase.auth.getClaims();const userId=claims?.claims?.sub;if(!userId)redirect("/login");const marketplace=String(formData.get("marketplace")??"shopee").toLowerCase();const commission=num(formData.get("commission_pct")),fixed=num(formData.get("fixed_fee")),taxes=num(formData.get("taxes_pct")),other=num(formData.get("other_costs"));if([commission,fixed,taxes,other].some(v=>v==null))redirect("/settings/marketplaces?error=Revise os valores informados");const{error}=await supabase.from("marketplace_pricing_settings").upsert({user_id:userId,marketplace,commission_pct:commission,fixed_fee:fixed,taxes_pct:taxes,other_costs:other,updated_at:new Date().toISOString()},{onConflict:"user_id,marketplace"});if(error)redirect(`/settings/marketplaces?error=${encodeURIComponent(error.message)}`);revalidatePath("/settings/marketplaces");redirect("/settings/marketplaces?saved=1");}
