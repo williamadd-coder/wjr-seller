@@ -1,36 +1,5 @@
 "use server";
-
 import { createClient } from "@/lib/supabase/server";
-
-function numberOrNull(value: FormDataEntryValue | null) {
-  const raw = String(value ?? "").trim().replace(/\s/g, "");
-  if (!raw) return null;
-  const normalized = raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-const text = (formData: FormData, key: string) => String(formData.get(key) ?? "").trim() || null;
-
-export async function createProductDraft(formData: FormData) {
-  const supabase = await createClient();
-  const { data: claimsData } = await supabase.auth.getClaims();
-  const userId = claimsData?.claims?.sub;
-  if (!userId) return { error: "Sua sessão expirou. Entre novamente." };
-  const name = String(formData.get("name") ?? "").trim();
-  if (!name) return { error: "Informe o nome do produto." };
-
-  const sourceData = {
-    marketplace: "shopee", ingestion: "seller_studio_manual",
-    ncm: text(formData, "ncm"), items_included: text(formData, "items_included"), supplier_description: text(formData, "supplier_description"),
-    product_specs: { weight_kg: numberOrNull(formData.get("product_weight_kg")), width_cm: numberOrNull(formData.get("product_width_cm")), height_cm: numberOrNull(formData.get("product_height_cm")), length_cm: numberOrNull(formData.get("product_length_cm")) },
-  };
-  const payload = {
-    user_id: userId, name, supplier: text(formData, "supplier"), supplier_url: text(formData, "supplier_url"), sku: text(formData, "sku"), ean: text(formData, "ean"),
-    cost: numberOrNull(formData.get("cost")), stock: null, brand: text(formData, "brand"), model: text(formData, "model"),
-    weight_kg: numberOrNull(formData.get("package_weight_kg")), width_cm: numberOrNull(formData.get("package_width_cm")), height_cm: numberOrNull(formData.get("package_height_cm")), length_cm: numberOrNull(formData.get("package_length_cm")),
-    source_data: sourceData,
-  };
-  const { data, error } = await supabase.from("products").insert(payload).select("id").single();
-  if (error) return { error: error.message };
-  return { id: data.id as string };
-}
+function numberOrNull(value:FormDataEntryValue|null){const raw=String(value??"").trim().replace(/\s/g,"");if(!raw)return null;const normalized=raw.includes(",")?raw.replace(/\./g,"").replace(",","."):raw;const parsed=Number(normalized);return Number.isFinite(parsed)?parsed:null}const text=(f:FormData,k:string)=>String(f.get(k)??"").trim()||null;
+export async function createProductDraft(formData:FormData){const supabase=await createClient();const{data:claims}=await supabase.auth.getClaims();const userId=claims?.claims?.sub;if(!userId)return{error:"Sua sessão expirou. Entre novamente."};const name=String(formData.get("name")??"").trim();if(!name)return{error:"Informe o nome do produto."};const sku=text(formData,"sku"),ean=text(formData,"ean");if(sku||ean){let query=supabase.from("products").select("id,name,sku,ean,source_data").eq("user_id",userId);if(sku&&ean)query=query.or(`sku.eq.${sku},ean.eq.${ean}`);else if(sku)query=query.eq("sku",sku);else query=query.eq("ean",ean!);const{data:existing}=await query.limit(10);const duplicate=(existing??[]).find((p:any)=>String(p.source_data?.marketplace??"shopee").toLowerCase()==="shopee");if(duplicate)return{error:`Este produto já possui anúncio na Shopee (${duplicate.name}). Abra o anúncio existente para editar ou regerar.`,existingId:duplicate.id as string}}
+const sourceData={marketplace:"shopee",ingestion:"seller_studio_manual",ncm:text(formData,"ncm"),items_included:text(formData,"items_included"),supplier_description:text(formData,"supplier_description"),product_specs:{weight_kg:numberOrNull(formData.get("product_weight_kg")),width_cm:numberOrNull(formData.get("product_width_cm")),height_cm:numberOrNull(formData.get("product_height_cm")),length_cm:numberOrNull(formData.get("product_length_cm"))}};const payload={user_id:userId,name,supplier:text(formData,"supplier"),supplier_url:text(formData,"supplier_url"),sku,ean,cost:numberOrNull(formData.get("cost")),stock:null,brand:text(formData,"brand"),model:text(formData,"model"),weight_kg:numberOrNull(formData.get("package_weight_kg")),width_cm:numberOrNull(formData.get("package_width_cm")),height_cm:numberOrNull(formData.get("package_height_cm")),length_cm:numberOrNull(formData.get("package_length_cm")),source_data:sourceData};const{data,error}=await supabase.from("products").insert(payload).select("id").single();if(error)return{error:error.message};return{id:data.id as string}}
