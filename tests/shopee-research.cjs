@@ -4,6 +4,7 @@ const { join }=require('node:path');
 const { researchShopeePublic,shopeeMoney,extractShopeeItems }=require(join(process.env.WJR_RESEARCH_TEST_DIR,'public-research.js'));
 const { saveResearchEvidence }=require(join(process.env.WJR_RESEARCH_TEST_DIR,'research-evidence.js'));
 const { researchMessage,isAutomaticResearch }=require(join(process.env.WJR_RESEARCH_TEST_DIR,'research-status.js'));
+const { preserveResearchAttempt }=require(join(process.env.WJR_RESEARCH_TEST_DIR,'optimization-notes.js'));
 const seed={name:'Pista de Corrida Infantil com Garagem e 4 Carrinhos'};
 const response=(data,status=200)=>new Response(JSON.stringify(data),{status});
 const row=(itemid,price)=>({item_basic:{itemid,shopid:10,name:seed.name,price}});
@@ -79,4 +80,25 @@ test('manual evidence is not labeled automatic and errors have distinct messages
   assert.equal(isAutomaticResearch('seller_studio_manual_evidence'),false);assert.equal(isAutomaticResearch('shopee_public_api'),true);
   const statuses=['blocked','timeout','no_matches','unavailable','save_failed'];
   assert.equal(new Set(statuses.map(status=>researchMessage({status}).title)).size,statuses.length);
+});
+test('a valid previous research attempt is preserved across a new optimization',()=>{
+  const attempt={status:'completed',checkedAt:'2024-01-01T00:00:00.000Z',queries:['x'],foundCount:1,comparableCount:1,pricedCount:1,diagnostics:[]};
+  const result=preserveResearchAttempt({publicResearchAttempt:attempt},{publicResearchExecuted:false});
+  assert.deepEqual(result,{publicResearchExecuted:false,publicResearchAttempt:attempt});
+});
+test('null, array or incomplete previous research attempts are ignored',()=>{
+  const next={publicResearchExecuted:false};
+  assert.deepEqual(preserveResearchAttempt(null,next),next);
+  assert.deepEqual(preserveResearchAttempt({publicResearchAttempt:null},next),next);
+  assert.deepEqual(preserveResearchAttempt({publicResearchAttempt:[]},next),next);
+  assert.deepEqual(preserveResearchAttempt({publicResearchAttempt:{status:'completed'}},next),next);
+  assert.deepEqual(preserveResearchAttempt({publicResearchAttempt:{checkedAt:'2024-01-01T00:00:00.000Z'}},next),next);
+});
+test('the default research message says research has not run yet, not that it failed or was incomplete',()=>{
+  const message=researchMessage(undefined);
+  assert.match(message.title,/não executada/);
+  assert.doesNotMatch(message.title,/não concluída/);
+  assert.doesNotMatch(message.title,/falha/);
+  assert.doesNotMatch(message.detail,/não concluída/);
+  assert.doesNotMatch(message.detail,/falha/);
 });

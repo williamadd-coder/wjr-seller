@@ -8,7 +8,7 @@ export function researchMessage(attempt?: ResearchAttempt | null) {
     case "save_failed": return { title:"Não foi possível salvar a pesquisa", detail:"Foram encontrados resultados, mas a gravação das evidências falhou. A tentativa não foi marcada como concluída. Tente novamente." };
     case "invalid_input": return { title:"Dados insuficientes para pesquisar", detail:"O nome do produto precisa conter termos que identifiquem o item." };
     case "completed": return { title:"Pesquisa concluída", detail:"As evidências da pesquisa foram registradas." };
-    default: return { title:"Pesquisa sem resultado registrado", detail:"Ainda não há um resultado verificável desta pesquisa. Tente pesquisar para obter resultados ou o motivo da indisponibilidade." };
+    default: return { title:"Pesquisa de mercado ainda não executada", detail:"A geração do anúncio não consulta a Shopee automaticamente. Nenhuma tentativa foi registrada para este produto." };
   }
 }
 export function isAutomaticResearch(source: unknown) {
