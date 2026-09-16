@@ -1,26 +1,3 @@
 "use client";
-
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { optimizeShopee } from "../actions";
-
-export function AutoGenerate({ productId, enabled }: { productId: string; enabled: boolean }) {
-  const started = useRef(false);
-  const router = useRouter();
-  const [status, setStatus] = useState(enabled ? "Analisando evidências e montando a primeira versão do anúncio…" : "");
-
-  useEffect(() => {
-    if (!enabled || started.current) return;
-    started.current = true;
-    optimizeShopee(productId)
-      .then(() => {
-        setStatus("Primeira versão gerada. Atualizando a prévia…");
-        router.replace(`/products/${productId}/review`);
-        router.refresh();
-      })
-      .catch(() => setStatus("Não foi possível concluir a geração automática. Revise as pendências e tente recalcular."));
-  }, [enabled, productId, router]);
-
-  if (!status) return null;
-  return <div className="authAlert">{status}</div>;
-}
+import { useEffect,useRef,useState } from "react";import { useRouter } from "next/navigation";import { optimizeShopee } from "../actions";
+export function AutoGenerate({productId,enabled}:{productId:string;enabled:boolean}){const started=useRef(false),router=useRouter();const[status,setStatus]=useState(enabled?"O Seller IA está analisando as informações do produto e preparando o anúncio…":"");const[working,setWorking]=useState(enabled);useEffect(()=>{if(!enabled||started.current)return;started.current=true;optimizeShopee(productId).then(()=>{setStatus("Análise concluída. Abrindo a prévia…");setWorking(false);router.replace(`/products/${productId}/review`);router.refresh()}).catch(()=>{setWorking(false);setStatus("Não foi possível concluir a geração automática. Revise as pendências e tente novamente.")})},[enabled,productId,router]);if(!status)return null;return <div className="authAlert" role="status" aria-live="polite"><span style={{display:"inline-block",marginRight:10}}>{working?"⏳":"✓"}</span><b>{status}</b>{working&&<small style={{display:"block",marginTop:6}}>Isso pode levar alguns segundos. Não é necessário clicar novamente.</small>}</div>}
