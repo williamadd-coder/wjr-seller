@@ -7,7 +7,7 @@ export async function saveResearchEvidence(supabase: any, productId: string, out
   const result = await supabase.from("market_analyses").insert({
     product_id: productId, marketplace: "shopee", competitors: data.competitors,
     price_min: data.priceMin, price_median: data.priceMedian, price_max: data.priceMax,
-    rationale: `Pesquisa pública com ${data.competitors.length} anúncio(s) comparável(is) e ${outcome.attempt.pricedCount} preço(s) observado(s).`,
+    rationale: `${data.source === "shopee_indexed_tavily" ? "Pesquisa em índice externo; preços atuais não verificados." : "Pesquisa pública direta."} Amostra com ${data.competitors.length} anúncio(s) comparável(is) e ${outcome.attempt.pricedCount} preço(s) observado(s).`,
     source: data.source, search_terms: data.searchTerms,
     competitor_patterns: { sample_size: data.competitors.length, priced_sample_size: outcome.attempt.pricedCount, found_count: outcome.attempt.foundCount, category: data.category, category_id: data.categoryId, research_attempt: outcome.attempt },
     conversion_insights: [],

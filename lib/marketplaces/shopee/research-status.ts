@@ -1,6 +1,9 @@
 import type { ResearchAttempt } from "./public-research";
 export function researchMessage(attempt?: ResearchAttempt | null) {
   switch (attempt?.status) {
+    case "provider_auth_failed": return { title:"Fonte alternativa indisponível", detail:"A conexão com o serviço de pesquisa precisa ser revisada pelo responsável pelo sistema." };
+    case "provider_limit": return { title:"Limite temporário da fonte de pesquisa", detail:"O serviço de pesquisa atingiu o limite de uso. As referências já salvas continuam disponíveis." };
+    case "provider_not_configured": return { title:"Fonte alternativa ainda não conectada", detail:"A fonte alternativa de pesquisa precisa ser ativada pelo responsável pelo sistema." };
     case "blocked": return { title:"Shopee recusou a consulta automática", detail:"A Shopee restringiu o acesso nesta tentativa. Isso não significa que não existam anúncios. Repetir a consulta pode continuar sem resultados enquanto a restrição persistir." };
     case "timeout": return { title:"A pesquisa excedeu o tempo de espera", detail:"Não foi possível concluir a consulta a tempo. Você pode tentar novamente." };
     case "unavailable": return { title:"Resultados da Shopee indisponíveis nesta consulta", detail:"A resposta recebida não trouxe dados de anúncios que possam ser verificados. Isso não significa ausência de concorrentes." };

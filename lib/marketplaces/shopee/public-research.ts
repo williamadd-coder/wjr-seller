@@ -3,8 +3,9 @@ import { buildShopeeSearchTerms, type ProductIntelligenceSeed } from "./intellig
 export type PublicCompetitor = {
   title: string; url: string; price: number | null; shopId: number; itemId: number;
   categoryId: string | null; category: string | null; attributes: Record<string, string>;
+  evidenceSource?: "tavily_index"; observedAt?: string; indexedPrice?: number | null; priceEvidence?: string | null;
 };
-export type ResearchStatus = "completed" | "blocked" | "timeout" | "unavailable" | "no_matches" | "invalid_input" | "save_failed";
+export type ResearchStatus = "completed" | "blocked" | "timeout" | "unavailable" | "no_matches" | "invalid_input" | "save_failed" | "provider_not_configured" | "provider_auth_failed" | "provider_limit";
 export type ResearchAttempt = {
   status: ResearchStatus; checkedAt: string; queries: string[]; foundCount: number;
   comparableCount: number; pricedCount: number; diagnostics: { source: string; status: string; code?: string }[];

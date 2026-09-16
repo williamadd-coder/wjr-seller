@@ -80,3 +80,54 @@ test('manual evidence is not labeled automatic and errors have distinct messages
   const statuses=['blocked','timeout','no_matches','unavailable','save_failed'];
   assert.equal(new Set(statuses.map(status=>researchMessage({status}).title)).size,statuses.length);
 });
+
+const {researchShopeeIndex,shopeeProductUrl,indexedPrice}=require(join(process.env.WJR_RESEARCH_TEST_DIR,'indexed-research.js'));
+const {researchShopeeMarket}=require(join(process.env.WJR_RESEARCH_TEST_DIR,'market-research.js'));
+test('index accepts product URLs only and strips tracking parameters',()=>{
+  assert.equal(shopeeProductUrl('https://shopee.com.br/Pista-i.10.20?tracking=abc').url,'https://shopee.com.br/product/10/20');
+  for(const url of ['https://shopee.com.br.evil.test/product/10/20','https://evil.test/product/10/20','https://shopee.com.br/search?keyword=pista','https://shopee.com.br@evil.test/product/10/20','http://shopee.com.br/product/10/20']) assert.equal(shopeeProductUrl(url),null);
+});
+test('ambiguous, installment, shipping and coupon amounts are not reference prices',()=>{
+  assert.equal(indexedPrice('Pista de corrida R$ 49,90').value,49.9);
+  for(const s of ['12x R$ 4,99','Frete R$ 10,00','De R$ 99,00 por R$ 49,90','Cupom R$ 5,00','A partir de R$ 20,00','R$ 5,00 por mês']) assert.equal(indexedPrice(s),null);
+});
+test('one basic external search returns attributable offers without generating answers or live prices',async()=>{
+  let count=0;
+  const result=await researchShopeeIndex(seed,{apiKey:'test-key',fetcher:async(url,options)=>{
+    count++;assert.equal(url,'https://api.tavily.com/search');assert.equal(options.redirect,'error');
+    const body=JSON.parse(options.body);assert.equal(body.search_depth,'basic');assert.equal(body.include_answer,false);assert.equal(body.auto_parameters,false);assert.deepEqual(body.include_domains,['shopee.com.br']);
+    return response({results:[{title:seed.name,url:'https://shopee.com.br/product/10/20',content:'Pista R$ 49,90'},{title:'Cabo USB',url:'https://shopee.com.br/product/10/30',content:'R$ 5,00'},{title:seed.name,url:'https://other.example/product/10/50',content:'R$ 99,00'}]});
+  }});
+  assert.equal(count,1);assert.equal(result.attempt.status,'completed');assert.equal(result.data.competitors.length,1);
+  const c=result.data.competitors[0];assert.equal(c.indexedPrice,49.9);assert.equal(c.price,null);assert.equal(c.evidenceSource,'tavily_index');assert.ok(c.observedAt);assert.ok(c.priceEvidence);
+  assert.equal(result.data.priceMedian,null);assert.equal(result.attempt.pricedCount,0);assert.deepEqual(result.data.attributes,{});
+});
+test('conflicting duplicate offers do not manufacture a price',async()=>{
+  const result=await researchShopeeIndex(seed,{apiKey:'test',fetcher:async()=>response({results:[49,59].map(price=>({title:seed.name,url:'https://shopee.com.br/product/10/20',content:`R$ ${price},90`}))})});
+  assert.equal(result.data.competitors.length,1);assert.equal(result.data.competitors[0].indexedPrice,null);
+});
+test('missing key makes no external request; provider authorization and quotas are distinct',async()=>{
+  const missing=await researchShopeeIndex(seed,{apiKey:'',fetcher:async()=>{throw new Error('must not request')}});assert.equal(missing.attempt.status,'provider_not_configured');
+  for(const [http,status] of [[401,'provider_auth_failed'],[429,'provider_limit'],[432,'provider_limit'],[433,'provider_limit'],[500,'unavailable']]) {
+    const r=await researchShopeeIndex(seed,{apiKey:'test',fetcher:async()=>response({},http)});assert.equal(r.attempt.status,status);assert.equal(r.data,null);
+  }
+});
+test('successful direct research never spends external search credits',async()=>{
+  const directResult=await researchShopeePublic(seed,{fetcher:mock([row(1,4490000)])});
+  const result=await researchShopeeMarket(seed,{direct:async()=>directResult,indexed:{apiKey:'test',fetcher:async()=>{throw new Error('must not request')}}});assert.equal(result,directResult);
+});
+test('direct restriction falls back to the index and preserves both diagnoses',async()=>{
+  const blocked=await researchShopeePublic(seed,{fetcher:async()=>response({},403)});
+  const result=await researchShopeeMarket(seed,{direct:async()=>blocked,indexed:{apiKey:'test',fetcher:async()=>response({results:[{title:seed.name,url:'https://shopee.com.br/product/10/20',content:'R$ 49,90'}]})}});
+  assert.equal(result.attempt.status,'completed');assert.equal(result.attempt.diagnostics[0].status,'blocked');assert.equal(result.attempt.diagnostics.at(-1).source,'tavily_search');
+  assert.equal(result.data.source,'shopee_indexed_tavily');
+});
+test('without a configured index the original error remains visible',async()=>{
+  const blocked=await researchShopeePublic(seed,{fetcher:async()=>response({},403)});
+  const result=await researchShopeeMarket(seed,{direct:async()=>blocked,indexed:{apiKey:''}});
+  assert.equal(result.attempt.status,'blocked');assert.equal(result.attempt.diagnostics.at(-1).status,'provider_not_configured');
+});
+test('external timeout covers body consumption',async()=>{
+  const r=await researchShopeeIndex(seed,{apiKey:'test',timeoutMs:10,fetcher:async(_url,{signal})=>({ok:true,json:()=>new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(new Error('timeout')),{once:true}))})});
+  assert.equal(r.attempt.status,'timeout');assert.equal(r.data,null);
+});
