@@ -7,6 +7,7 @@ import { scoreListing } from "@/lib/marketplaces/scoring";
 import { scoreFields } from "@/lib/marketplaces/shopee/score-fields";
 import { preserveResearchAttempt } from "@/lib/marketplaces/shopee/optimization-notes";
 import { suggestShopeeClassification } from "@/lib/marketplaces/shopee/classification";
+import { mergeSuggestedAttributes } from "@/lib/marketplaces/shopee/attribute-merge";
 import { planShopeeImages, type ImageInput } from "@/lib/marketplaces/shopee/image-plan";
 
 const BUCKET = "product-media";
@@ -36,12 +37,7 @@ export async function suggestCategoryAndAttributes(productId: string) {
   });
   if (error || !suggestion) fail(productId, error ?? "A IA não retornou uma sugestão.");
 
-  // Suggestions never overwrite what the seller already confirmed.
-  const merged = { ...current };
-  for (const attribute of suggestion!.attributes) {
-    const name = attribute.name.trim();
-    if (name && attribute.value.trim() && !merged[name]) merged[name] = attribute.value.trim();
-  }
+  const merged = mergeSuggestedAttributes(current, suggestion!.attributes);
   const category = listing.category?.trim() ? listing.category : suggestion!.categoryPath;
 
   const [{ data: assets }, { data: pricing }] = await Promise.all([

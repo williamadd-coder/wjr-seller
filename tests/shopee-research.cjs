@@ -5,6 +5,7 @@ const { researchShopeePublic,shopeeMoney,extractShopeeItems }=require(join(proce
 const { saveResearchEvidence }=require(join(process.env.WJR_RESEARCH_TEST_DIR,'research-evidence.js'));
 const { researchMessage,isAutomaticResearch }=require(join(process.env.WJR_RESEARCH_TEST_DIR,'research-status.js'));
 const { preserveResearchAttempt }=require(join(process.env.WJR_RESEARCH_TEST_DIR,'optimization-notes.js'));
+const { mergeSuggestedAttributes,attributeKey }=require(join(process.env.WJR_RESEARCH_TEST_DIR,'attribute-merge.js'));
 const seed={name:'Pista de Corrida Infantil com Garagem e 4 Carrinhos'};
 const response=(data,status=200)=>new Response(JSON.stringify(data),{status});
 const row=(itemid,price)=>({item_basic:{itemid,shopid:10,name:seed.name,price}});
@@ -93,6 +94,31 @@ test('null, array or incomplete previous research attempts are ignored',()=>{
   assert.deepEqual(preserveResearchAttempt({publicResearchAttempt:[]},next),next);
   assert.deepEqual(preserveResearchAttempt({publicResearchAttempt:{status:'completed'}},next),next);
   assert.deepEqual(preserveResearchAttempt({publicResearchAttempt:{checkedAt:'2024-01-01T00:00:00.000Z'}},next),next);
+});
+test('suggested attributes never duplicate what the generator already wrote, in any casing or synonym',()=>{
+  const current={marca:'BasicWear',modelo:'CB-100',ean:'7899999998881'};
+  const merged=mergeSuggestedAttributes(current,[
+    {name:'Marca',value:'BasicWear'},
+    {name:'Modelo',value:'CB-100'},
+    {name:'Código de barras (EAN/GTIN)',value:'7899999998881'},
+    {name:'Gênero',value:'Masculino'},
+  ]);
+  assert.deepEqual(merged,{...current,'Gênero':'Masculino'});
+});
+test('suggested attributes without a value, or duplicated among themselves, are ignored',()=>{
+  const merged=mergeSuggestedAttributes({},[
+    {name:'Tamanho',value:''},
+    {name:'  ',value:'G'},
+    {name:'Cor',value:'Azul'},
+    {name:'cor',value:'Verde'},
+  ]);
+  assert.deepEqual(merged,{Cor:'Azul'});
+});
+test('attribute keys ignore case, accents and punctuation',()=>{
+  assert.equal(attributeKey('Gênero'),attributeKey('genero'));
+  assert.equal(attributeKey('Tipo de gola'),attributeKey('tipo-de-gola'));
+  assert.equal(attributeKey('brand'),attributeKey('Marca'));
+  assert.notEqual(attributeKey('Cor'),attributeKey('Tamanho'));
 });
 test('the default research message says research has not run yet, not that it failed or was incomplete',()=>{
   const message=researchMessage(undefined);
