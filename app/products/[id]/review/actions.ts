@@ -71,8 +71,10 @@ export async function updateListingContent(productId: string, formData: FormData
     const problems = publishBlockers(product, freshListing, pricing, imageCount);
     if (problems.length) redirect(`/products/${productId}/review?error=${encodeURIComponent(String(problems[0]))}`);
     const now = new Date().toISOString();
-    await supabase.from("listings").update({ publication_status: "ready", updated_at: now }).eq("id", listing.id);
-    await supabase.from("products").update({ status: "ready", updated_at: now }).eq("id", productId);
+    const publishListingResult = await supabase.from("listings").update({ publication_status: "ready", updated_at: now }).eq("id", listing.id);
+    if (publishListingResult.error) redirect(`/products/${productId}/review?error=${encodeURIComponent(publishListingResult.error.message)}`);
+    const publishProductResult = await supabase.from("products").update({ status: "ready", updated_at: now }).eq("id", productId);
+    if (publishProductResult.error) redirect(`/products/${productId}/review?error=${encodeURIComponent(publishProductResult.error.message)}`);
     revalidatePath(`/products/${productId}/review`);
     revalidatePath(`/products/${productId}`);
     revalidatePath("/products");
