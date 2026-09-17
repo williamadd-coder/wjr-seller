@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { optimizeShopee } from "../actions";
 import { updateListingContent } from "./actions";
+import { suggestCategoryAndAttributes, analyzeProductImages } from "./ai-actions";
 import { AutoGenerate } from "./auto-generate";
 import { AttributesEditor } from "./attributes-editor";
 import { getShopeePublicationReadiness } from "@/lib/marketplaces/shopee/readiness";
@@ -11,7 +12,7 @@ import { buildShopeeIntelligencePlan } from "@/lib/marketplaces/shopee/intellige
 const BUCKET = "product-media";
 const money = (v: number | null | undefined) => v == null ? "—" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v));
 
-export default async function ReviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ generate?: string; error?: string; saved?: string; updated?: string }> }) {
+export default async function ReviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ generate?: string; error?: string; saved?: string; updated?: string; suggested?: string; analyzed?: string }> }) {
   const { id } = await params;
   const query = await searchParams;
   const supabase = await createClient();
@@ -44,6 +45,11 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
 
   const update = updateListingContent.bind(null, id);
   const optimize = optimizeShopee.bind(null, id);
+  const suggest = suggestCategoryAndAttributes.bind(null, id);
+  const analyzeImages = analyzeProductImages.bind(null, id);
+  const aiClassification = listing?.optimization_notes?.aiClassification;
+  const aiImagePlan = listing?.optimization_notes?.aiImagePlan;
+  const basisLabel: Record<string, string> = { evidencia: "Confirmado nas evidências", inferido: "Dedução da IA — confirme", desconhecido: "Você precisa informar" };
 
   return <main className="main studioPage">
     <div className="crumbs"><a href="/products">Anúncios</a><span>/</span><span>Prévia</span></div>
@@ -58,6 +64,8 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
     {query.error && <div className="authAlert error">{query.error}</div>}
     {query.updated === "1" && <div className="authAlert">Alterações salvas.</div>}
     {query.saved === "1" && <div className="authAlert">Anúncio publicado.</div>}
+    {query.suggested === "1" && <div className="authAlert">Sugestão da IA aplicada. Confira os campos marcados como dedução antes de publicar.</div>}
+    {query.analyzed === "1" && <div className="authAlert">Análise das imagens concluída.</div>}
 
     <section className="formSection">
       <div className="sectionTitle"><div><div className="eyebrow">Percentual de Prontidão</div></div><span className="progressLabel">{readiness.percentage}%</span></div>
@@ -66,6 +74,9 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
         ? <p className="note">Campos obrigatórios faltantes: {missingLabels.join(", ")} · <a href={`/products/${id}/readiness`}>Entender preparação</a></p>
         : <p className="note">Todas as etapas obrigatórias estão concluídas. <a href={`/products/${id}/readiness`}>Ver diagnóstico completo</a></p>}
     </section>
+
+    <form id="suggestForm" action={suggest} />
+    <form id="analyzeForm" action={analyzeImages} />
 
     <form id="listingForm" action={update}>
       <div className="workspaceGrid reviewGrid">
@@ -87,21 +98,40 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
           </section>
 
           <section className="formSection">
-            <div className="eyebrow">Atributos da Categoria</div>
-            <p className="note">Atributos confirmados do anúncio. A sugestão automática dos atributos que a Shopee exige por categoria é a próxima etapa (pesquisa de categoria).</p>
+            <div className="sectionTitle"><div className="eyebrow">Atributos da Categoria</div><button type="submit" form="suggestForm" className="button compact">Sugerir categoria e atributos com IA</button></div>
+            <p className="note">A IA sugere a categoria da Shopee e os atributos que ela costuma exigir, preenchendo apenas o que estiver vazio — nunca sobrescreve o que você já confirmou. Salve o rascunho antes, para não perder edições não salvas.</p>
             <AttributesEditor initial={attrs} />
+            {aiClassification && <div className="aiSuggestion">
+              <b>Sugestão da IA · categoria {aiClassification.categoryPath} (confiança {aiClassification.confidence})</b>
+              <p className="note">{aiClassification.reason}</p>
+              <div className="aiAttributeList">{(aiClassification.attributes ?? []).map((attribute: any) => <div key={attribute.name}>
+                <span>{attribute.name}{attribute.required ? " · obrigatório na Shopee" : ""}</span>
+                <b>{attribute.value || "—"}</b>
+                <small>{basisLabel[attribute.basis] ?? attribute.basis}</small>
+              </div>)}</div>
+            </div>}
           </section>
 
           <section className="formSection">
-            <div className="sectionTitle"><div className="eyebrow">Imagens Melhoradas</div><span className="statusChip">{imageCount} imagem(ns)</span></div>
-            <p className="note">Geração de imagens e vídeo otimizados para conversão pela IA: em breve. Por enquanto, veja as imagens originais enviadas na primeira etapa.</p>
+            <div className="sectionTitle"><div className="eyebrow">Imagens Melhoradas</div><div className="packageActions"><span className="statusChip">{imageCount} imagem(ns)</span>{imageCount > 0 && <button type="submit" form="analyzeForm" className="button compact">Analisar imagens com IA</button>}</div></div>
+            <p className="note">A IA analisa as imagens que você enviou e indica qual deve ser a capa, o papel de cada uma e o que falta fotografar. A geração de novas imagens por IA entra na etapa seguinte.</p>
             {imageCount > 0
-              ? <div className="imageGrid">{signedImages.map((img) => <div className="imageCardWrap" key={img.id}>
-                  <div className="imageSlot filled">{img.url && <img src={img.url} alt={img.name} />}</div>
-                  <div className="imageCardMeta"><span>Original</span><span className="statusChip">Aguardando revisão</span></div>
-                  <button type="button" className="button compact" disabled title="Geração de imagem por IA: em breve">Melhorar</button>
-                </div>)}</div>
+              ? <div className="imageGrid">{signedImages.map((img, index) => {
+                  const analysis = (aiImagePlan?.images ?? []).find((item: any) => item.index === index);
+                  const isCover = aiImagePlan?.coverIndex === index;
+                  return <div className="imageCardWrap" key={img.id}>
+                    <div className="imageSlot filled">{img.url && <img src={img.url} alt={img.name} />}</div>
+                    <div className="imageCardMeta"><span>{analysis?.role ?? "Original"}</span>{isCover && <span className="statusChip done">Capa sugerida</span>}</div>
+                    {(analysis?.issues ?? []).map((issue: string) => <small className="note" key={issue}>{issue}</small>)}
+                  </div>;
+                })}</div>
               : <p className="note">Nenhuma imagem enviada ainda. <a href={`/products/${id}`}>Adicionar imagens</a></p>}
+            {aiImagePlan && <div className="aiSuggestion">
+              <b>Capa recomendada pela IA</b>
+              <p className="note">{aiImagePlan.coverReason}</p>
+              {(aiImagePlan.missingShots ?? []).length > 0 && <><b>Fotos que faltam</b>{aiImagePlan.missingShots.map((shot: string) => <p className="note" key={shot}>• {shot}</p>)}</>}
+              {aiImagePlan.videoSuggestion && <><b>Vídeo sugerido</b><p className="note">{aiImagePlan.videoSuggestion}</p></>}
+            </div>}
           </section>
 
           <div className="formActions">

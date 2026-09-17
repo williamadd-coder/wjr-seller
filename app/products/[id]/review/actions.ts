@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { scoreListing } from "@/lib/marketplaces/scoring";
+import { scoreFields } from "@/lib/marketplaces/shopee/score-fields";
 import { preserveResearchAttempt } from "@/lib/marketplaces/shopee/optimization-notes";
 
 function publishBlockers(product: any, listing: any, pricing: any, images: number) {
@@ -55,12 +56,7 @@ export async function updateListingContent(productId: string, formData: FormData
 
   const payload = {
     title, description, category: category || null, attributes, keywords,
-    listing_score: score.total, conversion_score: score.total,
-    seo_score: Math.round((score.title.score + score.attributes.score + score.completeness.score) / 3),
-    content_score: Math.round((score.title.score + score.description.score + score.attributes.score) / 3),
-    title_score: score.title.score, attribute_score: score.attributes.score, description_score: score.description.score,
-    media_score: score.media.score, offer_score: score.offer.score, trust_score: score.trust.score, completeness_score: score.completeness.score,
-    score_breakdown: score, optimization_notes: optimizationNotes, updated_at: new Date().toISOString(),
+    ...scoreFields(score), optimization_notes: optimizationNotes, updated_at: new Date().toISOString(),
   };
   const result = await supabase.from("listings").update(payload).eq("id", listing.id);
   if (result.error) redirect(`/products/${productId}/review?error=${encodeURIComponent(result.error.message)}`);
