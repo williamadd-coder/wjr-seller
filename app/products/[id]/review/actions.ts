@@ -7,6 +7,14 @@ import { scoreListing } from "@/lib/marketplaces/scoring";
 import { scoreFields } from "@/lib/marketplaces/shopee/score-fields";
 import { preserveResearchAttempt } from "@/lib/marketplaces/shopee/optimization-notes";
 
+/** Accepts "89,90" and "89.90"; empty stays null so the stored value is kept. */
+function numberOrNull(value: FormDataEntryValue | null) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = Number(raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function publishBlockers(product: any, listing: any, pricing: any, images: number) {
   const attributes = listing.attributes && typeof listing.attributes === "object" ? Object.keys(listing.attributes).length : 0;
   const blockers: string[] = listing.score_breakdown?.blockers ?? [];
@@ -42,6 +50,16 @@ export async function updateListingContent(productId: string, formData: FormData
   if (!title) redirect(`/products/${productId}/review?error=${encodeURIComponent("O título não pode ficar vazio.")}`);
   if (!description) redirect(`/products/${productId}/review?error=${encodeURIComponent("A descrição não pode ficar vazia.")}`);
 
+  // Cost, stock, weight and dimensions were only captured at product creation, leaving no way to fix them later.
+  const basics = {
+    cost: numberOrNull(formData.get("cost")) ?? product.cost,
+    stock: numberOrNull(formData.get("stock")) ?? product.stock,
+    weight_kg: numberOrNull(formData.get("weight_kg")) ?? product.weight_kg,
+    width_cm: numberOrNull(formData.get("width_cm")) ?? product.width_cm,
+    height_cm: numberOrNull(formData.get("height_cm")) ?? product.height_cm,
+    length_cm: numberOrNull(formData.get("length_cm")) ?? product.length_cm,
+  };
+
   const [{ data: assets }, { data: pricing }] = await Promise.all([
     supabase.from("product_assets").select("asset_type").eq("product_id", productId).eq("marketplace", "shopee"),
     supabase.from("pricing_scenarios").select("sale_price").eq("product_id", productId).eq("marketplace", "shopee").eq("is_recommended", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
@@ -51,7 +69,7 @@ export async function updateListingContent(productId: string, formData: FormData
   const hasVideo = (assets ?? []).some((a) => a.asset_type === "video");
   const price = pricing?.sale_price == null ? undefined : Number(pricing.sale_price);
   const categoryId = listing.marketplace_category_id ?? (category || undefined);
-  const score = scoreListing({ marketplace: "shopee", title, categoryId, description, keywords, attributes, imageCount, hasVideo, price, stock: product.stock ?? undefined, sku: product.sku ?? undefined, ean: product.ean ?? undefined, weightKg: product.weight_kg ?? undefined, dimensions: { widthCm: product.width_cm ?? undefined, heightCm: product.height_cm ?? undefined, lengthCm: product.length_cm ?? undefined } });
+  const score = scoreListing({ marketplace: "shopee", title, categoryId, description, keywords, attributes, imageCount, hasVideo, price, stock: basics.stock ?? undefined, sku: product.sku ?? undefined, ean: product.ean ?? undefined, weightKg: basics.weight_kg ?? undefined, dimensions: { widthCm: basics.width_cm ?? undefined, heightCm: basics.height_cm ?? undefined, lengthCm: basics.length_cm ?? undefined } });
   const optimizationNotes = preserveResearchAttempt(listing.optimization_notes, { ...(listing.optimization_notes && typeof listing.optimization_notes === "object" ? listing.optimization_notes : {}), blockers: score.blockers, recommendations: score.recommendations, manuallyEdited: true });
 
   const payload = {
@@ -60,7 +78,8 @@ export async function updateListingContent(productId: string, formData: FormData
   };
   const result = await supabase.from("listings").update(payload).eq("id", listing.id);
   if (result.error) redirect(`/products/${productId}/review?error=${encodeURIComponent(result.error.message)}`);
-  await supabase.from("products").update({ wjr_score: score.total, status: score.total >= 70 ? "ready" : "needs_review", updated_at: new Date().toISOString() }).eq("id", productId);
+  const productResult = await supabase.from("products").update({ ...basics, wjr_score: score.total, status: score.total >= 70 ? "ready" : "needs_review", updated_at: new Date().toISOString() }).eq("id", productId);
+  if (productResult.error) redirect(`/products/${productId}/review?error=${encodeURIComponent(productResult.error.message)}`);
 
   if (intent === "publish") {
     const { data: freshListing } = await supabase.from("listings").select("*").eq("id", listing.id).single();

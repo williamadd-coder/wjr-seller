@@ -3,16 +3,17 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { optimizeShopee } from "../actions";
 import { updateListingContent } from "./actions";
-import { suggestCategoryAndAttributes, analyzeProductImages } from "./ai-actions";
+import { suggestCategoryAndAttributes, analyzeProductImages, researchCategoryAndPrices } from "./ai-actions";
 import { AutoGenerate } from "./auto-generate";
 import { AttributesEditor } from "./attributes-editor";
+import { AiActionButton } from "./ai-buttons";
 import { getShopeePublicationReadiness } from "@/lib/marketplaces/shopee/readiness";
 import { buildShopeeIntelligencePlan } from "@/lib/marketplaces/shopee/intelligence";
 
 const BUCKET = "product-media";
 const money = (v: number | null | undefined) => v == null ? "—" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v));
 
-export default async function ReviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ generate?: string; error?: string; saved?: string; updated?: string; suggested?: string; analyzed?: string }> }) {
+export default async function ReviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ generate?: string; error?: string; saved?: string; updated?: string; suggested?: string; analyzed?: string; researched?: string }> }) {
   const { id } = await params;
   const query = await searchParams;
   const supabase = await createClient();
@@ -47,8 +48,10 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
   const optimize = optimizeShopee.bind(null, id);
   const suggest = suggestCategoryAndAttributes.bind(null, id);
   const analyzeImages = analyzeProductImages.bind(null, id);
+  const research = researchCategoryAndPrices.bind(null, id);
   const aiClassification = listing?.optimization_notes?.aiClassification;
   const aiImagePlan = listing?.optimization_notes?.aiImagePlan;
+  const aiResearch = listing?.optimization_notes?.aiMarketResearch;
   const basisLabel: Record<string, string> = { evidencia: "Confirmado nas evidências", inferido: "Dedução da IA — confirme", desconhecido: "Você precisa informar" };
 
   return <main className="main studioPage">
@@ -66,6 +69,7 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
     {query.saved === "1" && <div className="authAlert">Anúncio publicado.</div>}
     {query.suggested === "1" && <div className="authAlert">Sugestão da IA aplicada. Confira os campos marcados como dedução antes de publicar.</div>}
     {query.analyzed === "1" && <div className="authAlert">Análise das imagens concluída.</div>}
+    {query.researched != null && query.researched !== "" && <div className="authAlert">{query.researched === "0" ? "A pesquisa não encontrou anúncios comparáveis na Shopee. Ajuste o nome ou a marca do produto e tente de novo." : `Pesquisa concluída com ${query.researched} anúncio(s) da Shopee. Confira a categoria e a faixa de preço.`}</div>}
 
     <section className="formSection">
       <div className="sectionTitle"><div><div className="eyebrow">Percentual de Prontidão</div></div><span className="progressLabel">{readiness.percentage}%</span></div>
@@ -74,9 +78,6 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
         ? <p className="note">Campos obrigatórios faltantes: {missingLabels.join(", ")} · <a href={`/products/${id}/readiness`}>Entender preparação</a></p>
         : <p className="note">Todas as etapas obrigatórias estão concluídas. <a href={`/products/${id}/readiness`}>Ver diagnóstico completo</a></p>}
     </section>
-
-    <form id="suggestForm" action={suggest} />
-    <form id="analyzeForm" action={analyzeImages} />
 
     <form id="listingForm" action={update}>
       <div className="workspaceGrid reviewGrid">
@@ -98,7 +99,7 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
           </section>
 
           <section className="formSection">
-            <div className="sectionTitle"><div className="eyebrow">Atributos da Categoria</div><button type="submit" form="suggestForm" className="button compact">Sugerir categoria e atributos com IA</button></div>
+            <div className="sectionTitle"><div className="eyebrow">Atributos da Categoria</div><AiActionButton action={suggest} label="Sugerir categoria e atributos com IA" pendingLabel="Analisando com IA…" hint="A IA está pesquisando a categoria e os atributos. Isso leva alguns segundos." /></div>
             <p className="note">A IA sugere a categoria da Shopee e os atributos que ela costuma exigir, preenchendo apenas o que estiver vazio — nunca sobrescreve o que você já confirmou. Salve o rascunho antes, para não perder edições não salvas.</p>
             <AttributesEditor initial={attrs} />
             {aiClassification && <div className="aiSuggestion">
@@ -113,7 +114,7 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
           </section>
 
           <section className="formSection">
-            <div className="sectionTitle"><div className="eyebrow">Imagens Melhoradas</div><div className="packageActions"><span className="statusChip">{imageCount} imagem(ns)</span>{imageCount > 0 && <button type="submit" form="analyzeForm" className="button compact">Analisar imagens com IA</button>}</div></div>
+            <div className="sectionTitle"><div className="eyebrow">Imagens Melhoradas</div><div className="packageActions"><span className="statusChip">{imageCount} imagem(ns)</span>{imageCount > 0 && <AiActionButton action={analyzeImages} label="Analisar imagens com IA" pendingLabel="Analisando imagens…" hint="A IA está olhando cada imagem. Isso leva alguns segundos." />}</div></div>
             <p className="note">A IA analisa as imagens que você enviou e indica qual deve ser a capa, o papel de cada uma e o que falta fotografar. A geração de novas imagens por IA entra na etapa seguinte.</p>
             {imageCount > 0
               ? <div className="imageGrid">{signedImages.map((img, index) => {
@@ -134,6 +135,19 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
             </div>}
           </section>
 
+          <section className="formSection">
+            <div className="eyebrow">Oferta e Envio</div>
+            <p className="note">Dados obrigatórios da Shopee que ficam com você. Sem custo e estoque o anúncio não publica; peso e dimensões do pacote definem o frete.</p>
+            <div className="basicsGrid">
+              <label className="fieldLabel">Custo do produto (R$)<input name="cost" defaultValue={product.cost ?? ""} inputMode="decimal" placeholder="Ex.: 43,99" /></label>
+              <label className="fieldLabel">Estoque disponível<input name="stock" defaultValue={product.stock ?? ""} inputMode="numeric" placeholder="Ex.: 10" /></label>
+              <label className="fieldLabel">Peso do pacote (kg)<input name="weight_kg" defaultValue={product.weight_kg ?? ""} inputMode="decimal" placeholder="Ex.: 0,67" /></label>
+              <label className="fieldLabel">Largura (cm)<input name="width_cm" defaultValue={product.width_cm ?? ""} inputMode="decimal" placeholder="Ex.: 50" /></label>
+              <label className="fieldLabel">Altura (cm)<input name="height_cm" defaultValue={product.height_cm ?? ""} inputMode="decimal" placeholder="Ex.: 33" /></label>
+              <label className="fieldLabel">Comprimento (cm)<input name="length_cm" defaultValue={product.length_cm ?? ""} inputMode="decimal" placeholder="Ex.: 42" /></label>
+            </div>
+          </section>
+
           <div className="formActions">
             <button className="button" type="submit" name="intent" value="draft">Salvar Rascunho</button>
             <button className="button primary" type="submit" name="intent" value="publish">Publicar Anúncio</button>
@@ -144,7 +158,15 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
           <section className="formSection">
             <div className="eyebrow">Categoria Sugerida</div>
             <label className="fieldLabel">Categoria</label>
-            <input name="category" defaultValue={listing?.category ?? ""} placeholder="Ex.: Roupas > Camisetas" />
+            <input name="category" defaultValue={listing?.category ?? ""} placeholder="Ex.: Mãe e Bebê > Brinquedos > Veículos de Brinquedo" />
+            <p className="note">A IA procura anúncios do mesmo produto na Shopee para descobrir o caminho real da categoria, os atributos que ela exige ali e a faixa de preço praticada. Salve o rascunho antes, para não perder edições não salvas. Em produtos mais difíceis de encontrar, a busca pode demorar mais que o esperado e pedir para você tentar de novo — não é erro, é a IA sendo cautelosa para não inventar dados.</p>
+            <AiActionButton action={research} label="Pesquisar anúncios na Shopee" pendingLabel="Pesquisando na Shopee…" hint="A IA está lendo anúncios reais da Shopee. Isso leva até 25 segundos, não feche esta página." />
+            {aiResearch && <div className="aiSuggestion">
+              <b>Pesquisa da IA · {aiResearch.categoryPath || "categoria não identificada"} (confiança {aiResearch.categoryConfidence})</b>
+              <p className="note">{aiResearch.categoryReason}</p>
+              <p className="note">{aiResearch.competitorCount} anúncio(s) encontrado(s) · {aiResearch.pricedCount} com preço visível</p>
+              {(aiResearch.competitors ?? []).map((item: any) => <p className="note" key={`${item.url}-${item.title}`}>• {item.url ? <a href={item.url} target="_blank" rel="noreferrer">{item.title || item.url}</a> : item.title} — {money(item.price)}{item.sold ? ` · ${item.sold}` : ""}</p>)}
+            </div>}
           </section>
 
           <section className="formSection">
@@ -155,8 +177,14 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
               <div><span>Preço Concorrência (máx)</span><b>{money(analysis?.price_max)}</b></div>
               <div><span>Margem</span><b>{pricing?.margin_pct != null ? `${Number(pricing.margin_pct).toFixed(1)}%` : "—"}</b></div>
             </div>
-            <a className="button compact" href={`/products/${id}`}>Editar preço</a>
+            <p className="note">{analysis ? `Faixa observada em ${Array.isArray(analysis.competitors) ? analysis.competitors.length : 0} anúncio(s) da Shopee.` : "A faixa da concorrência aparece depois que você usa o botão “Pesquisar anúncios na Shopee”."}</p>
+            <a className="button compact" href={`/products/${id}/preco`}>Editar preço</a>
           </section>
+
+          {(aiResearch?.conversionInsights ?? []).length > 0 && <section className="formSection">
+            <div className="eyebrow">O que os mais vendidos fazem</div>
+            {aiResearch.conversionInsights.map((insight: string) => <p className="note" key={insight}>• {insight}</p>)}
+          </section>}
 
           <section className="formSection">
             <div className="eyebrow">Resumo da Otimização</div>
