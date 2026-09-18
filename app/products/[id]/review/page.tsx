@@ -159,7 +159,7 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
             <div className="eyebrow">Categoria Sugerida</div>
             <label className="fieldLabel">Categoria</label>
             <input name="category" defaultValue={listing?.category ?? ""} placeholder="Ex.: Mãe e Bebê > Brinquedos > Veículos de Brinquedo" />
-            <p className="note">A IA procura anúncios do mesmo produto na Shopee para descobrir o caminho real da categoria, os atributos que ela exige ali e a faixa de preço praticada. Salve o rascunho antes, para não perder edições não salvas.</p>
+            <p className="note">A IA procura anúncios do mesmo produto na Shopee para descobrir o caminho real da categoria, os atributos que ela exige ali e a faixa de preço praticada. Salve o rascunho antes, para não perder edições não salvas. Em produtos mais difíceis de encontrar, a busca pode demorar mais que o esperado e pedir para você tentar de novo — não é erro, é a IA sendo cautelosa para não inventar dados.</p>
             <AiActionButton action={research} label="Pesquisar anúncios na Shopee" pendingLabel="Pesquisando na Shopee…" hint="A IA está lendo anúncios reais da Shopee. Isso leva até 25 segundos, não feche esta página." />
             {aiResearch && <div className="aiSuggestion">
               <b>Pesquisa da IA · {aiResearch.categoryPath || "categoria não identificada"} (confiança {aiResearch.categoryConfidence})</b>
