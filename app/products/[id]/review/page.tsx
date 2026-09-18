@@ -1,19 +1,17 @@
-import { ResearchPanel } from "./research-panel";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { optimizeShopee } from "../actions";
 import { updateListingContent } from "./actions";
-import { suggestCategoryAndAttributes, analyzeProductImages, researchCategoryAndPrices } from "./ai-actions";
+import { analyzeProductImages, researchCategoryAndPrices } from "./ai-actions";
 import { AutoGenerate } from "./auto-generate";
 import { AttributesEditor } from "./attributes-editor";
 import { AiActionButton } from "./ai-buttons";
 import { getShopeePublicationReadiness } from "@/lib/marketplaces/shopee/readiness";
-import { buildShopeeIntelligencePlan } from "@/lib/marketplaces/shopee/intelligence";
 
 const BUCKET = "product-media";
 const money = (v: number | null | undefined) => v == null ? "—" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v));
 
-export default async function ReviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ generate?: string; error?: string; saved?: string; updated?: string; suggested?: string; analyzed?: string; researched?: string }> }) {
+export default async function ReviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ generate?: string; error?: string; saved?: string; updated?: string; analyzed?: string; researched?: string }> }) {
   const { id } = await params;
   const query = await searchParams;
   const supabase = await createClient();
@@ -35,7 +33,6 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
   const imageCount = images.length;
   const source = product.source_data && typeof product.source_data === "object" ? (product.source_data as Record<string, any>) : {};
   const specs = source.product_specs && typeof source.product_specs === "object" ? source.product_specs : {};
-  const intelligence = buildShopeeIntelligencePlan({ name: product.name, brand: product.brand, model: product.model, supplierDescription: source.supplier_description });
   const readiness = getShopeePublicationReadiness({ cost: product.cost, stock: product.stock, sku: product.sku, ean: product.ean, weightKg: product.weight_kg, widthCm: product.width_cm, heightCm: product.height_cm, lengthCm: product.length_cm, productWeightKg: specs.weight_kg, productWidthCm: specs.width_cm, productHeightCm: specs.height_cm, productLengthCm: specs.length_cm, supplierDescription: source.supplier_description, hasMarketEvidence: !!analysis, hasPricing: !!pricing, category: listing?.category, attributeCount: attrKeys.length, imageCount, hasVideo: (assets ?? []).some((a) => a.asset_type === "video"), listingScore: listing?.listing_score, scoreBlockers: listing?.score_breakdown?.blockers ?? [] });
   const missingLabels = readiness.steps.filter((s) => s.blocking && !s.ready).map((s) => s.label);
 
@@ -46,18 +43,15 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
 
   const update = updateListingContent.bind(null, id);
   const optimize = optimizeShopee.bind(null, id);
-  const suggest = suggestCategoryAndAttributes.bind(null, id);
   const analyzeImages = analyzeProductImages.bind(null, id);
   const research = researchCategoryAndPrices.bind(null, id);
-  const aiClassification = listing?.optimization_notes?.aiClassification;
   const aiImagePlan = listing?.optimization_notes?.aiImagePlan;
   const aiResearch = listing?.optimization_notes?.aiMarketResearch;
-  const basisLabel: Record<string, string> = { evidencia: "Confirmado nas evidências", inferido: "Dedução da IA — confirme", desconhecido: "Você precisa informar" };
 
   return <main className="main studioPage">
     <div className="crumbs"><a href="/products">Anúncios</a><span>/</span><span>Prévia</span></div>
     <div className="studioHeader">
-      <div><div className="eyebrow">Prévia do anúncio · Shopee</div><h1>Prévia do Anúncio Otimizado</h1><p>Revise e ajuste o que a IA preparou. As alterações são salvas no anúncio quando você clica em Salvar Rascunho ou Publicar Anúncio.</p></div>
+      <div><div className="eyebrow">Prévia do anúncio · Shopee</div><h1>Prévia do Anúncio Otimizado</h1><p>Abaixo está exatamente o que vai para o anúncio. Os dados originais que você enviou ficam recolhidos, só para conferência. As alterações são salvas quando você clica em Salvar Rascunho ou Publicar Anúncio.</p></div>
       <div className="reviewHeaderActions">
         <button form="listingForm" name="intent" value="draft" className="button" type="submit">Salvar Rascunho</button>
         <button form="listingForm" name="intent" value="publish" className="button primary" type="submit">Publicar Anúncio</button>
@@ -67,9 +61,8 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
     {query.error && <div className="authAlert error">{query.error}</div>}
     {query.updated === "1" && <div className="authAlert">Alterações salvas.</div>}
     {query.saved === "1" && <div className="authAlert">Anúncio publicado.</div>}
-    {query.suggested === "1" && <div className="authAlert">Sugestão da IA aplicada. Confira os campos marcados como dedução antes de publicar.</div>}
     {query.analyzed === "1" && <div className="authAlert">Análise das imagens concluída.</div>}
-    {query.researched != null && query.researched !== "" && <div className="authAlert">{query.researched === "0" ? "A pesquisa não encontrou anúncios comparáveis na Shopee. Ajuste o nome ou a marca do produto e tente de novo." : `Pesquisa concluída com ${query.researched} anúncio(s) da Shopee. Confira a categoria e a faixa de preço.`}</div>}
+    {query.researched != null && query.researched !== "" && <div className="authAlert">{query.researched === "0" ? "A pesquisa não encontrou anúncios comparáveis na Shopee. Ajuste o nome ou a marca do produto e tente de novo." : `Pesquisa concluída com ${query.researched} anúncio(s) da Shopee. Categoria, atributos e preço da concorrência foram atualizados abaixo.`}</div>}
 
     <section className="formSection">
       <div className="sectionTitle"><div><div className="eyebrow">Percentual de Prontidão</div></div><span className="progressLabel">{readiness.percentage}%</span></div>
@@ -79,51 +72,46 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
         : <p className="note">Todas as etapas obrigatórias estão concluídas. <a href={`/products/${id}/readiness`}>Ver diagnóstico completo</a></p>}
     </section>
 
+    <details className="formSection originalData">
+      <summary><div className="eyebrow">Dados originais que você enviou</div><h2>Conferir o que foi informado no cadastro</h2></summary>
+      <label className="fieldLabel">Nome original</label>
+      <div className="previewBlock readOnly">{product.name}</div>
+      <label className="fieldLabel">Descrição original do fornecedor</label>
+      <div className="previewBlock readOnly"><pre>{source.supplier_description || "Sem descrição original informada pelo fornecedor."}</pre></div>
+    </details>
+
     <form id="listingForm" action={update}>
       <div className="workspaceGrid reviewGrid">
         <div className="reviewMain">
           <section className="formSection">
-            <div className="eyebrow">Título Melhorado</div>
-            <label className="fieldLabel">Título Original</label>
-            <div className="previewBlock readOnly">{product.name}</div>
-            <label className="fieldLabel">Título Otimizado (edite se necessário)</label>
+            <div className="eyebrow">Título do Anúncio</div>
+            <p className="note">É este texto que aparece para quem pesquisa na Shopee. Edite se necessário.</p>
             <input name="title" defaultValue={listing?.title ?? ""} maxLength={120} placeholder="Gere o anúncio para preencher automaticamente" />
           </section>
 
           <section className="formSection">
-            <div className="eyebrow">Descrição Melhorada</div>
-            <label className="fieldLabel">Descrição Original</label>
-            <div className="previewBlock readOnly"><pre>{source.supplier_description || "Sem descrição original informada pelo fornecedor."}</pre></div>
-            <label className="fieldLabel">Descrição Otimizada (edite se necessário)</label>
+            <div className="eyebrow">Descrição do Anúncio</div>
+            <p className="note">Texto completo que vai na página do produto na Shopee. Edite se necessário.</p>
             <textarea name="description" defaultValue={listing?.description ?? ""} rows={10} placeholder="Gere o anúncio para preencher automaticamente" />
           </section>
 
           <section className="formSection">
-            <div className="sectionTitle"><div className="eyebrow">Atributos da Categoria</div><AiActionButton action={suggest} label="Sugerir categoria e atributos com IA" pendingLabel="Analisando com IA…" hint="A IA está pesquisando a categoria e os atributos. Isso leva alguns segundos." /></div>
-            <p className="note">A IA sugere a categoria da Shopee e os atributos que ela costuma exigir, preenchendo apenas o que estiver vazio — nunca sobrescreve o que você já confirmou. Salve o rascunho antes, para não perder edições não salvas.</p>
+            <div className="eyebrow">Atributos da Categoria</div>
+            <p className="note">Preenchidos automaticamente pela pesquisa de categoria (barra lateral, à direita). Ajuste ou complete manualmente aqui — o que você editar aqui não é sobrescrito por uma nova pesquisa.</p>
             <AttributesEditor initial={attrs} />
-            {aiClassification && <div className="aiSuggestion">
-              <b>Sugestão da IA · categoria {aiClassification.categoryPath} (confiança {aiClassification.confidence})</b>
-              <p className="note">{aiClassification.reason}</p>
-              <div className="aiAttributeList">{(aiClassification.attributes ?? []).map((attribute: any) => <div key={attribute.name}>
-                <span>{attribute.name}{attribute.required ? " · obrigatório na Shopee" : ""}</span>
-                <b>{attribute.value || "—"}</b>
-                <small>{basisLabel[attribute.basis] ?? attribute.basis}</small>
-              </div>)}</div>
-            </div>}
           </section>
 
           <section className="formSection">
-            <div className="sectionTitle"><div className="eyebrow">Imagens Melhoradas</div><div className="packageActions"><span className="statusChip">{imageCount} imagem(ns)</span>{imageCount > 0 && <AiActionButton action={analyzeImages} label="Analisar imagens com IA" pendingLabel="Analisando imagens…" hint="A IA está olhando cada imagem. Isso leva alguns segundos." />}</div></div>
-            <p className="note">A IA analisa as imagens que você enviou e indica qual deve ser a capa, o papel de cada uma e o que falta fotografar. A geração de novas imagens por IA entra na etapa seguinte.</p>
+            <div className="sectionTitle"><div className="eyebrow">Imagens do Anúncio</div><div className="packageActions"><span className="statusChip">{imageCount} imagem(ns)</span>{imageCount > 0 && <AiActionButton action={analyzeImages} label="Analisar imagens com IA" pendingLabel="Analisando imagens…" hint="A IA está olhando cada imagem. Isso leva alguns segundos." />}</div></div>
+            <p className="note">Clique em <b>Analisar imagens com IA</b> para a IA dizer qual foto usar como capa, o que está errado em cada uma (os avisos abaixo de cada imagem) e quais fotos ainda faltam. A geração de novas imagens por IA entra em uma etapa futura — por enquanto a IA só avalia o que você já enviou.</p>
             {imageCount > 0
               ? <div className="imageGrid">{signedImages.map((img, index) => {
                   const analysis = (aiImagePlan?.images ?? []).find((item: any) => item.index === index);
                   const isCover = aiImagePlan?.coverIndex === index;
                   return <div className="imageCardWrap" key={img.id}>
                     <div className="imageSlot filled">{img.url && <img src={img.url} alt={img.name} />}</div>
-                    <div className="imageCardMeta"><span>{analysis?.role ?? "Original"}</span>{isCover && <span className="statusChip done">Capa sugerida</span>}</div>
-                    {(analysis?.issues ?? []).map((issue: string) => <small className="note" key={issue}>{issue}</small>)}
+                    <div className="imageCardMeta"><span>{analysis?.role ?? (aiImagePlan ? "Sem papel definido" : "Ainda não analisada")}</span>{isCover && <span className="statusChip done">Capa sugerida</span>}</div>
+                    {(analysis?.issues ?? []).length > 0 && <div className="imageIssues"><b>O que a IA notou nesta foto</b>{analysis.issues.map((issue: string) => <small className="note" key={issue}>• {issue}</small>)}</div>}
                   </div>;
                 })}</div>
               : <p className="note">Nenhuma imagem enviada ainda. <a href={`/products/${id}`}>Adicionar imagens</a></p>}
@@ -156,11 +144,12 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
 
         <div className="reviewSidebar">
           <section className="formSection">
-            <div className="eyebrow">Categoria Sugerida</div>
+            <div className="eyebrow">Categoria e Concorrência</div>
+            <p className="note">Único lugar para pesquisar: um clique busca a categoria real da Shopee, os atributos que ela exige e a faixa de preço praticada pela concorrência, tudo a partir de anúncios reais.</p>
             <label className="fieldLabel">Categoria</label>
             <input name="category" defaultValue={listing?.category ?? ""} placeholder="Ex.: Mãe e Bebê > Brinquedos > Veículos de Brinquedo" />
-            <p className="note">A IA procura anúncios do mesmo produto na Shopee para descobrir o caminho real da categoria, os atributos que ela exige ali e a faixa de preço praticada. Salve o rascunho antes, para não perder edições não salvas. Em produtos mais difíceis de encontrar, a busca pode demorar mais que o esperado e pedir para você tentar de novo — não é erro, é a IA sendo cautelosa para não inventar dados.</p>
             <AiActionButton action={research} label="Pesquisar anúncios na Shopee" pendingLabel="Pesquisando na Shopee…" hint="A IA está lendo anúncios reais da Shopee. Isso leva até 25 segundos, não feche esta página." />
+            <p className="note">Salve o rascunho antes de pesquisar, para não perder edições não salvas. Em produtos mais difíceis de encontrar, pode pedir para você tentar de novo — não é erro, é a IA sendo cautelosa para não inventar dados.</p>
             {aiResearch && <div className="aiSuggestion">
               <b>Pesquisa da IA · {aiResearch.categoryPath || "categoria não identificada"} (confiança {aiResearch.categoryConfidence})</b>
               <p className="note">{aiResearch.categoryReason}</p>
@@ -177,7 +166,7 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
               <div><span>Preço Concorrência (máx)</span><b>{money(analysis?.price_max)}</b></div>
               <div><span>Margem</span><b>{pricing?.margin_pct != null ? `${Number(pricing.margin_pct).toFixed(1)}%` : "—"}</b></div>
             </div>
-            <p className="note">{analysis ? `Faixa observada em ${Array.isArray(analysis.competitors) ? analysis.competitors.length : 0} anúncio(s) da Shopee.` : "A faixa da concorrência aparece depois que você usa o botão “Pesquisar anúncios na Shopee”."}</p>
+            <p className="note">{analysis ? `Faixa observada em ${Array.isArray(analysis.competitors) ? analysis.competitors.length : 0} anúncio(s) da Shopee.` : "A faixa da concorrência aparece depois que você usa o botão “Pesquisar anúncios na Shopee” logo acima."}</p>
             <a className="button compact" href={`/products/${id}/preco`}>Editar preço</a>
           </section>
 
@@ -198,15 +187,10 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
       </div>
     </form>
 
-    {/* Outside #listingForm: both carry their own form, and forms cannot nest. */}
-    <div className="reviewFooter">
-      <ResearchPanel productId={id} analysis={analysis} attempt={listing?.optimization_notes?.publicResearchAttempt} terms={intelligence.searchTerms} />
-
-      <section className="formSection">
-        <div className="sectionTitle"><div><div className="eyebrow">Regerar com IA</div><h2>Recalcular do zero</h2></div></div>
-        <p className="note">Substitui título, descrição, atributos e preço pelas evidências do produto, descartando as edições manuais feitas acima.</p>
-        <form action={optimize}><button className="button" type="submit">Recalcular anúncio</button></form>
-      </section>
-    </div>
+    <section className="formSection">
+      <div className="sectionTitle"><div><div className="eyebrow">Regerar com IA</div><h2>Recalcular do zero</h2></div></div>
+      <p className="note">Substitui título, descrição, atributos e preço pelas evidências do produto, descartando as edições manuais feitas acima.</p>
+      <form action={optimize}><button className="button" type="submit">Recalcular anúncio</button></form>
+    </section>
   </main>;
 }
