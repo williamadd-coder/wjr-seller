@@ -198,12 +198,15 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
       </div>
     </form>
 
-    <ResearchPanel productId={id} analysis={analysis} attempt={listing?.optimization_notes?.publicResearchAttempt} terms={intelligence.searchTerms} />
+    {/* Outside #listingForm: both carry their own form, and forms cannot nest. */}
+    <div className="reviewFooter">
+      <ResearchPanel productId={id} analysis={analysis} attempt={listing?.optimization_notes?.publicResearchAttempt} terms={intelligence.searchTerms} />
 
-    <section className="formSection">
-      <div className="sectionTitle"><div><div className="eyebrow">Regerar com IA</div><h2>Recalcular do zero</h2></div></div>
-      <p className="note">Substitui título, descrição, atributos e preço pelas evidências do produto, descartando as edições manuais feitas acima.</p>
-      <form action={optimize}><button className="button" type="submit">Recalcular anúncio</button></form>
-    </section>
+      <section className="formSection">
+        <div className="sectionTitle"><div><div className="eyebrow">Regerar com IA</div><h2>Recalcular do zero</h2></div></div>
+        <p className="note">Substitui título, descrição, atributos e preço pelas evidências do produto, descartando as edições manuais feitas acima.</p>
+        <form action={optimize}><button className="button" type="submit">Recalcular anúncio</button></form>
+      </section>
+    </div>
   </main>;
 }
