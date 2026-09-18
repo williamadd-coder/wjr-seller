@@ -42,7 +42,7 @@ export type MarketResearchSeed = {
 /** Netlify's function timeout bounds how long this call can run: every extra search round adds a full network round-trip, so a single, well-chosen search is what keeps this call inside that budget — Anthropic runs it on its own infrastructure, which is what Shopee's own endpoints refuse to answer for us. */
 const SEARCH_TOOL = { type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 1, user_location: { type: "approximate" as const, country: "BR", timezone: "America/Sao_Paulo" } };
 /** Leaves margin before the platform kills the function outright, so a slow search fails with a message the seller understands instead of a blank error page. */
-const REQUEST_TIMEOUT_MS = 25000;
+const REQUEST_TIMEOUT_MS = 55000;
 
 const SYSTEM = `Você pesquisa anúncios reais da Shopee Brasil para quem vai cadastrar um produto igual.
 
