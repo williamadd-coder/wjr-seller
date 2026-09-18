@@ -39,19 +39,17 @@ export type MarketResearchSeed = {
   searchTerms?: string[];
 };
 
-/** Netlify's function timeout bounds how long this call can run: every extra search round adds a full network round-trip, so a single, well-chosen search is what keeps this call inside that budget — Anthropic runs it on its own infrastructure, which is what Shopee's own endpoints refuse to answer for us. */
-const SEARCH_TOOL = { type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 1, user_location: { type: "approximate" as const, country: "BR", timezone: "America/Sao_Paulo" } };
 /**
- * Validated against the Deploy Preview: at 20s and 25s this fires cleanly and the function still has time to
- * redirect with a friendly message (~30-32s total). At 55s the request never came back at all — not even as an
- * error — which points to the platform killing the function outright before our own timeout gets the chance to
- * run, losing the graceful message. 25s is the longest value confirmed to degrade gracefully instead of hanging.
+ * Runs inside a Netlify Background Function (up to 15 min), not a regular server action (~26s), so it
+ * can afford a few search rounds for better accuracy instead of betting everything on one query.
  */
-const REQUEST_TIMEOUT_MS = 25000;
+const SEARCH_TOOL = { type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 3, user_location: { type: "approximate" as const, country: "BR", timezone: "America/Sao_Paulo" } };
+/** Safety net against the Anthropic call itself hanging — well inside the background function's 15-minute budget. */
+const REQUEST_TIMEOUT_MS = 120000;
 
 const SYSTEM = `Você pesquisa anúncios reais da Shopee Brasil para quem vai cadastrar um produto igual.
 
-Use a ferramenta de busca na web UMA ÚNICA VEZ (o tempo de resposta é limitado) para encontrar anúncios do MESMO produto (ou do mais parecido possível) na Shopee Brasil. Capriche na query: combine nome, marca e modelo do produto com "shopee" em uma só busca.
+Use a ferramenta de busca na web (até 3 buscas) para encontrar anúncios do MESMO produto (ou do mais parecido possível) na Shopee Brasil. Comece pelo termo mais específico (nome + marca + modelo) e só use termos mais genéricos se o primeiro não trouxer resultado.
 
 Com base apenas no que você realmente encontrou, responda:
 1. "categoryPath": o caminho COMPLETO da categoria como a Shopee Brasil exibe, com " > " entre os níveis (exemplo de formato: "Mãe e Bebê > Brinquedos > Veículos de Brinquedo"). Use a nomenclatura real da Shopee e a profundidade que os anúncios encontrados mostram.
@@ -82,7 +80,7 @@ export async function researchShopeeMarket(seed: MarketResearchSeed): Promise<{ 
   try {
     const response = await client.messages.parse({
       model: AI_MODEL,
-      max_tokens: 4000,
+      max_tokens: 8000,
       system: SYSTEM,
       tools: [SEARCH_TOOL],
       messages: [{ role: "user", content: seedText(seed) }],

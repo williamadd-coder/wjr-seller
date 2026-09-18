@@ -2,9 +2,9 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { optimizeShopee } from "../actions";
 import { updateListingContent } from "./actions";
-import { analyzeProductImages, researchCategoryAndPrices } from "./ai-actions";
+import { analyzeProductImages, startShopeeResearch } from "./ai-actions";
 import { AutoGenerate } from "./auto-generate";
-import { AutoResearch } from "./auto-research";
+import { ResearchPoller } from "./research-poller";
 import { AttributesEditor } from "./attributes-editor";
 import { AiActionButton } from "./ai-buttons";
 import { getShopeePublicationReadiness } from "@/lib/marketplaces/shopee/readiness";
@@ -12,7 +12,7 @@ import { getShopeePublicationReadiness } from "@/lib/marketplaces/shopee/readine
 const BUCKET = "product-media";
 const money = (v: number | null | undefined) => v == null ? "—" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v));
 
-export default async function ReviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ generate?: string; autoResearch?: string; error?: string; saved?: string; updated?: string; analyzed?: string; researched?: string }> }) {
+export default async function ReviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ generate?: string; error?: string; saved?: string; updated?: string; analyzed?: string; researching?: string }> }) {
   const { id } = await params;
   const query = await searchParams;
   const supabase = await createClient();
@@ -45,9 +45,11 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
   const update = updateListingContent.bind(null, id);
   const optimize = optimizeShopee.bind(null, id);
   const analyzeImages = analyzeProductImages.bind(null, id);
-  const research = researchCategoryAndPrices.bind(null, id);
+  const startResearch = startShopeeResearch.bind(null, id);
   const aiImagePlan = listing?.optimization_notes?.aiImagePlan;
   const aiResearch = listing?.optimization_notes?.aiMarketResearch;
+  const researchPending = aiResearch?.status === "pending";
+  const researchDone = !!aiResearch && aiResearch.status !== "pending" && aiResearch.status !== "error";
 
   return <main className="main studioPage">
     <div className="crumbs"><a href="/products">Anúncios</a><span>/</span><span>Prévia</span></div>
@@ -59,12 +61,13 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
       </div>
     </div>
     <AutoGenerate productId={id} enabled={query.generate === "1" && !listing} />
-    <AutoResearch action={research} enabled={query.autoResearch === "1" && !aiResearch} />
+    <ResearchPoller pending={researchPending} />
     {query.error && <div className="authAlert error">{query.error}</div>}
     {query.updated === "1" && <div className="authAlert">Alterações salvas.</div>}
     {query.saved === "1" && <div className="authAlert">Anúncio publicado.</div>}
     {query.analyzed === "1" && <div className="authAlert">Análise das imagens concluída.</div>}
-    {query.researched != null && query.researched !== "" && <div className="authAlert">{query.researched === "0" ? "A pesquisa não encontrou anúncios comparáveis na Shopee. Ajuste o nome ou a marca do produto e tente de novo." : `Pesquisa concluída com ${query.researched} anúncio(s) da Shopee. Categoria, atributos e preço da concorrência foram atualizados abaixo.`}</div>}
+    {researchDone && aiResearch.competitorCount === 0 && <div className="authAlert">A pesquisa não encontrou anúncios comparáveis na Shopee. Ajuste o nome ou a marca do produto e pesquise de novo.</div>}
+    {aiResearch?.status === "error" && <div className="authAlert error">{aiResearch.message}</div>}
 
     <section className="formSection">
       <div className="sectionTitle"><div><div className="eyebrow">Percentual de Prontidão</div></div><span className="progressLabel">{readiness.percentage}%</span></div>
@@ -150,9 +153,9 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
             <p className="note">Único lugar para pesquisar: um clique busca a categoria real da Shopee, os atributos que ela exige e a faixa de preço praticada pela concorrência, tudo a partir de anúncios reais.</p>
             <label className="fieldLabel">Categoria</label>
             <input name="category" defaultValue={listing?.category ?? ""} placeholder="Ex.: Mãe e Bebê > Brinquedos > Veículos de Brinquedo" />
-            <AiActionButton action={research} label="Pesquisar anúncios na Shopee" pendingLabel="Pesquisando na Shopee…" hint="A IA está lendo anúncios reais da Shopee. Isso leva até 25 segundos, não feche esta página." />
-            <p className="note">Salve o rascunho antes de pesquisar, para não perder edições não salvas. Em produtos mais difíceis de encontrar, pode pedir para você tentar de novo — não é erro, é a IA sendo cautelosa para não inventar dados.</p>
-            {aiResearch && <div className="aiSuggestion">
+            <form action={startResearch}><button className="button compact" type="submit" disabled={researchPending}>{researchPending ? "Pesquisando na Shopee…" : "Pesquisar anúncios na Shopee"}</button></form>
+            <p className="note">Salve o rascunho antes de pesquisar, para não perder edições não salvas. A pesquisa roda em segundo plano — você pode continuar editando enquanto espera.</p>
+            {researchDone && <div className="aiSuggestion">
               <b>Pesquisa da IA · {aiResearch.categoryPath || "categoria não identificada"} (confiança {aiResearch.categoryConfidence})</b>
               <p className="note">{aiResearch.categoryReason}</p>
               <p className="note">{aiResearch.competitorCount} anúncio(s) encontrado(s) · {aiResearch.pricedCount} com preço visível</p>
