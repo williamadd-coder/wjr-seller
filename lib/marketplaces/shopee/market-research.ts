@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { AI_MODEL, MISSING_KEY_MESSAGE, createAnthropic, describeAiError } from "@/lib/ai/anthropic";
 import { marketPriceRange } from "@/lib/marketplaces/shopee/market-price";
@@ -38,12 +39,14 @@ export type MarketResearchSeed = {
   searchTerms?: string[];
 };
 
-/** Netlify's function timeout bounds how long this call can run, so max_uses caps the search rounds — Anthropic runs the searches on its own infrastructure, which is what Shopee's own endpoints refuse to answer for us. */
-const SEARCH_TOOL = { type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 3, user_location: { type: "approximate" as const, country: "BR", timezone: "America/Sao_Paulo" } };
+/** Netlify's function timeout bounds how long this call can run: every extra search round adds a full network round-trip, so a single, well-chosen search is what keeps this call inside that budget — Anthropic runs it on its own infrastructure, which is what Shopee's own endpoints refuse to answer for us. */
+const SEARCH_TOOL = { type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 1, user_location: { type: "approximate" as const, country: "BR", timezone: "America/Sao_Paulo" } };
+/** Leaves margin before the platform kills the function outright, so a slow search fails with a message the seller understands instead of a blank error page. */
+const REQUEST_TIMEOUT_MS = 20000;
 
 const SYSTEM = `Você pesquisa anúncios reais da Shopee Brasil para quem vai cadastrar um produto igual.
 
-Use a ferramenta de busca na web para encontrar anúncios do MESMO produto (ou do produto mais parecido possível) na Shopee Brasil. Faça no máximo 3 buscas (o tempo de resposta é limitado), priorizando o termo mais específico primeiro (nome + marca + modelo) e só usando termos mais genéricos se o primeiro não trouxer resultado.
+Use a ferramenta de busca na web UMA ÚNICA VEZ (o tempo de resposta é limitado) para encontrar anúncios do MESMO produto (ou do mais parecido possível) na Shopee Brasil. Capriche na query: combine nome, marca e modelo do produto com "shopee" em uma só busca.
 
 Com base apenas no que você realmente encontrou, responda:
 1. "categoryPath": o caminho COMPLETO da categoria como a Shopee Brasil exibe, com " > " entre os níveis (exemplo de formato: "Mãe e Bebê > Brinquedos > Veículos de Brinquedo"). Use a nomenclatura real da Shopee e a profundidade que os anúncios encontrados mostram.
@@ -74,16 +77,17 @@ export async function researchShopeeMarket(seed: MarketResearchSeed): Promise<{ 
   try {
     const response = await client.messages.parse({
       model: AI_MODEL,
-      max_tokens: 8000,
+      max_tokens: 4000,
       system: SYSTEM,
       tools: [SEARCH_TOOL],
       messages: [{ role: "user", content: seedText(seed) }],
       output_config: { format: zodOutputFormat(ResearchSchema) },
-    });
+    }, { timeout: REQUEST_TIMEOUT_MS, maxRetries: 0 });
     if (response.stop_reason === "refusal") return { data: null, error: "A IA recusou esta pesquisa. Revise as evidências do produto." };
     if (!response.parsed_output) return { data: null, error: "A IA respondeu em um formato inesperado. Tente novamente." };
     return { data: response.parsed_output, error: null };
   } catch (error) {
+    if (error instanceof Anthropic.APIConnectionTimeoutError) return { data: null, error: "A pesquisa na Shopee demorou demais e foi interrompida. Tente novamente — buscas mais específicas (marca e modelo) costumam ser mais rápidas." };
     return { data: null, error: describeAiError(error) };
   }
 }
