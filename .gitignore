@@ -32,6 +32,9 @@ coverage/
 # Vercel
 .vercel/
 
+# Netlify CLI local state
+.netlify/
+
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
