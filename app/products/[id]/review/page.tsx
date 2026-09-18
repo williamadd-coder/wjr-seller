@@ -4,6 +4,7 @@ import { optimizeShopee } from "../actions";
 import { updateListingContent } from "./actions";
 import { analyzeProductImages, researchCategoryAndPrices } from "./ai-actions";
 import { AutoGenerate } from "./auto-generate";
+import { AutoResearch } from "./auto-research";
 import { AttributesEditor } from "./attributes-editor";
 import { AiActionButton } from "./ai-buttons";
 import { getShopeePublicationReadiness } from "@/lib/marketplaces/shopee/readiness";
@@ -11,7 +12,7 @@ import { getShopeePublicationReadiness } from "@/lib/marketplaces/shopee/readine
 const BUCKET = "product-media";
 const money = (v: number | null | undefined) => v == null ? "—" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v));
 
-export default async function ReviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ generate?: string; error?: string; saved?: string; updated?: string; analyzed?: string; researched?: string }> }) {
+export default async function ReviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ generate?: string; autoResearch?: string; error?: string; saved?: string; updated?: string; analyzed?: string; researched?: string }> }) {
   const { id } = await params;
   const query = await searchParams;
   const supabase = await createClient();
@@ -58,6 +59,7 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
       </div>
     </div>
     <AutoGenerate productId={id} enabled={query.generate === "1" && !listing} />
+    <AutoResearch action={research} enabled={query.autoResearch === "1" && !aiResearch} />
     {query.error && <div className="authAlert error">{query.error}</div>}
     {query.updated === "1" && <div className="authAlert">Alterações salvas.</div>}
     {query.saved === "1" && <div className="authAlert">Anúncio publicado.</div>}
@@ -125,14 +127,14 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
 
           <section className="formSection">
             <div className="eyebrow">Oferta e Envio</div>
-            <p className="note">Dados obrigatórios da Shopee que ficam com você. Sem custo e estoque o anúncio não publica; peso e dimensões do pacote definem o frete.</p>
+            <p className="note">Dados obrigatórios da Shopee que ficam com você. Estoque já vem preenchido com um valor alto para quem não controla estoque manualmente — ajuste se precisar. Peso e dimensões do pacote definem o frete.</p>
             <div className="basicsGrid">
               <label className="fieldLabel">Custo do produto (R$)<input name="cost" defaultValue={product.cost ?? ""} inputMode="decimal" placeholder="Ex.: 43,99" /></label>
-              <label className="fieldLabel">Estoque disponível<input name="stock" defaultValue={product.stock ?? ""} inputMode="numeric" placeholder="Ex.: 10" /></label>
-              <label className="fieldLabel">Peso do pacote (kg)<input name="weight_kg" defaultValue={product.weight_kg ?? ""} inputMode="decimal" placeholder="Ex.: 0,67" /></label>
-              <label className="fieldLabel">Largura (cm)<input name="width_cm" defaultValue={product.width_cm ?? ""} inputMode="decimal" placeholder="Ex.: 50" /></label>
-              <label className="fieldLabel">Altura (cm)<input name="height_cm" defaultValue={product.height_cm ?? ""} inputMode="decimal" placeholder="Ex.: 33" /></label>
-              <label className="fieldLabel">Comprimento (cm)<input name="length_cm" defaultValue={product.length_cm ?? ""} inputMode="decimal" placeholder="Ex.: 42" /></label>
+              <label className="fieldLabel">Estoque disponível<input name="stock" defaultValue={product.stock ?? 999} inputMode="numeric" placeholder="Ex.: 10" /></label>
+              <label className="fieldLabel">Peso do pacote (kg)<input name="weight_kg" defaultValue={product.weight_kg ?? specs.weight_kg ?? ""} inputMode="decimal" placeholder="Ex.: 0,67" /></label>
+              <label className="fieldLabel">Largura (cm)<input name="width_cm" defaultValue={product.width_cm ?? specs.width_cm ?? ""} inputMode="decimal" placeholder="Ex.: 50" /></label>
+              <label className="fieldLabel">Altura (cm)<input name="height_cm" defaultValue={product.height_cm ?? specs.height_cm ?? ""} inputMode="decimal" placeholder="Ex.: 33" /></label>
+              <label className="fieldLabel">Comprimento (cm)<input name="length_cm" defaultValue={product.length_cm ?? specs.length_cm ?? ""} inputMode="decimal" placeholder="Ex.: 42" /></label>
             </div>
           </section>
 
@@ -187,7 +189,7 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
       </div>
     </form>
 
-    <section className="formSection">
+    <section className="formSection regenerateSection">
       <div className="sectionTitle"><div><div className="eyebrow">Regerar com IA</div><h2>Recalcular do zero</h2></div></div>
       <p className="note">Substitui título, descrição, atributos e preço pelas evidências do produto, descartando as edições manuais feitas acima.</p>
       <form action={optimize}><button className="button" type="submit">Recalcular anúncio</button></form>
