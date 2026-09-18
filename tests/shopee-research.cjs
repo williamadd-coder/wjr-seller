@@ -6,6 +6,7 @@ const { saveResearchEvidence }=require(join(process.env.WJR_RESEARCH_TEST_DIR,'r
 const { researchMessage,isAutomaticResearch }=require(join(process.env.WJR_RESEARCH_TEST_DIR,'research-status.js'));
 const { preserveResearchAttempt }=require(join(process.env.WJR_RESEARCH_TEST_DIR,'optimization-notes.js'));
 const { mergeSuggestedAttributes,attributeKey }=require(join(process.env.WJR_RESEARCH_TEST_DIR,'attribute-merge.js'));
+const { marketPriceRange }=require(join(process.env.WJR_RESEARCH_TEST_DIR,'market-price.js'));
 const seed={name:'Pista de Corrida Infantil com Garagem e 4 Carrinhos'};
 const response=(data,status=200)=>new Response(JSON.stringify(data),{status});
 const row=(itemid,price)=>({item_basic:{itemid,shopid:10,name:seed.name,price}});
@@ -127,4 +128,17 @@ test('the default research message says research has not run yet, not that it fa
   assert.doesNotMatch(message.title,/falha/);
   assert.doesNotMatch(message.detail,/não concluída/);
   assert.doesNotMatch(message.detail,/falha/);
+});
+
+test('market price range ignores missing and non-positive prices and computes min/median/max',()=>{
+  const range=marketPriceRange([{price:89.9},{price:null},{price:0},{price:65},{price:120}]);
+  assert.equal(range.min,65);assert.equal(range.median,89.9);assert.equal(range.max,120);assert.equal(range.sampleSize,3);
+});
+test('market price range with an even sample averages the two middle prices',()=>{
+  const range=marketPriceRange([{price:100},{price:80}]);
+  assert.equal(range.median,90);assert.equal(range.sampleSize,2);
+});
+test('market price range with no usable prices returns nulls instead of NaN',()=>{
+  const range=marketPriceRange([{price:null},{price:-5}]);
+  assert.equal(range.min,null);assert.equal(range.median,null);assert.equal(range.max,null);assert.equal(range.sampleSize,0);
 });
