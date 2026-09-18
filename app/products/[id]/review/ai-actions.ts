@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { scoreListing } from "@/lib/marketplaces/scoring";
 import { scoreFields } from "@/lib/marketplaces/shopee/score-fields";
@@ -92,7 +93,10 @@ export async function startShopeeResearch(productId: string) {
   const result = await supabase.from("listings").update({ optimization_notes: notes }).eq("id", listing.id);
   if (result.error) fail(productId, result.error.message);
 
-  const base = process.env.DEPLOY_PRIME_URL || process.env.URL || "";
+  // process.env.URL/DEPLOY_PRIME_URL aren't populated in this Next.js runtime, unlike classic Netlify
+  // Functions — the incoming request's own host always matches the deploy actually serving this page.
+  const host = (await headers()).get("host");
+  const base = host ? `https://${host}` : (process.env.DEPLOY_PRIME_URL || process.env.URL || "");
   try {
     const response = await fetch(`${base}/.netlify/functions/shopee-market-research-background`, {
       method: "POST",
@@ -100,8 +104,10 @@ export async function startShopeeResearch(productId: string) {
       body: JSON.stringify({ productId, accessToken }),
     });
     if (!response.ok && response.status !== 202) throw new Error(`status ${response.status}`);
-  } catch {
-    fail(productId, "Não foi possível iniciar a pesquisa agora. Tente novamente em instantes.");
+  } catch (err) {
+    // Roll the status back from "pending" — otherwise the poller spins and the button stays disabled forever.
+    await supabase.from("listings").update({ optimization_notes: preserveResearchAttempt(notes, { ...notes, aiMarketResearch: { status: "error", message: "Não foi possível iniciar a pesquisa.", finishedAt: new Date().toISOString() } }) }).eq("id", listing.id);
+    fail(productId, `Não foi possível iniciar a pesquisa agora. Tente novamente em instantes. (${err instanceof Error ? err.message : "erro desconhecido"} · base=${base || "vazio"})`);
   }
 
   revalidatePath(`/products/${productId}/review`);
