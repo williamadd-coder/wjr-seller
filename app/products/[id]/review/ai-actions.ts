@@ -16,6 +16,14 @@ const MAX_ANALYZED_IMAGES = 5;
 const SUPPORTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 const fail = (productId: string, message: string) => redirect(`/products/${productId}/review?error=${encodeURIComponent(message)}`);
 
+/** Accepts "89,90" and "89.90"; empty means "field not present in this submission", so keep the stored value. */
+function numberOrNull(value: FormDataEntryValue | null) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = Number(raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 async function loadContext(productId: string) {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
@@ -80,11 +88,32 @@ export async function suggestCategoryAndAttributes(productId: string) {
  * listing "pending" so the review page's poller picks up the result once the background function
  * writes it, whether that takes 20 seconds or two minutes.
  */
-export async function startShopeeResearch(productId: string) {
-  const { supabase, listing } = await loadContext(productId);
+export async function startShopeeResearch(productId: string, formData?: FormData) {
+  const { supabase, product, listing } = await loadContext(productId);
   const { data: sessionData } = await supabase.auth.getSession();
   const accessToken = sessionData.session?.access_token;
   if (!accessToken) fail(productId, "Sessão expirada. Entre novamente e tente de novo.");
+
+  // This button lives inside the same <form> as title/description/Oferta e Envio — save whatever the
+  // seller already typed there too, so clicking "Pesquisar" never discards unsaved edits.
+  if (formData) {
+    const basics = {
+      cost: numberOrNull(formData.get("cost")) ?? product.cost,
+      stock: numberOrNull(formData.get("stock")) ?? product.stock,
+      weight_kg: numberOrNull(formData.get("weight_kg")) ?? product.weight_kg,
+      width_cm: numberOrNull(formData.get("width_cm")) ?? product.width_cm,
+      height_cm: numberOrNull(formData.get("height_cm")) ?? product.height_cm,
+      length_cm: numberOrNull(formData.get("length_cm")) ?? product.length_cm,
+    };
+    const title = String(formData.get("title") ?? "").trim();
+    const description = String(formData.get("description") ?? "").trim();
+    const category = String(formData.get("category") ?? "").trim();
+    await supabase.from("products").update({ ...basics, updated_at: new Date().toISOString() }).eq("id", productId);
+    await supabase.from("listings").update({
+      ...(title ? { title } : {}), ...(description ? { description } : {}), ...(category ? { category } : {}),
+      updated_at: new Date().toISOString(),
+    }).eq("id", listing.id);
+  }
 
   const notes = preserveResearchAttempt(listing.optimization_notes, {
     ...(listing.optimization_notes && typeof listing.optimization_notes === "object" ? listing.optimization_notes : {}),

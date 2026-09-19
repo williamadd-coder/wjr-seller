@@ -153,7 +153,7 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
             <p className="note">Único lugar para pesquisar: um clique busca a categoria real da Shopee, os atributos que ela exige e a faixa de preço praticada pela concorrência, tudo a partir de anúncios reais.</p>
             <label className="fieldLabel">Categoria</label>
             <input name="category" defaultValue={listing?.category ?? ""} placeholder="Ex.: Mãe e Bebê > Brinquedos > Veículos de Brinquedo" />
-            <form action={startResearch}><button className="button compact" type="submit" disabled={researchPending}>{researchPending ? "Pesquisando na Shopee…" : "Pesquisar anúncios na Shopee"}</button></form>
+            <button className="button compact" type="submit" formAction={startResearch} disabled={researchPending}>{researchPending ? "Pesquisando na Shopee…" : "Pesquisar anúncios na Shopee"}</button>
             <p className="note">Salve o rascunho antes de pesquisar, para não perder edições não salvas. A pesquisa roda em segundo plano — você pode continuar editando enquanto espera.</p>
             {researchDone && <div className="aiSuggestion">
               <b>Pesquisa da IA · {aiResearch.categoryPath || "categoria não identificada"} (confiança {aiResearch.categoryConfidence})</b>
