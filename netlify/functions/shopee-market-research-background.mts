@@ -5,6 +5,7 @@ import { preserveResearchAttempt } from "../../lib/marketplaces/shopee/optimizat
 import { scoreListing } from "../../lib/marketplaces/scoring";
 import { scoreFields } from "../../lib/marketplaces/shopee/score-fields";
 import { buildShopeeIntelligencePlan } from "../../lib/marketplaces/shopee/intelligence";
+import { generateShopeeCopy } from "../../lib/marketplaces/shopee/copywriting";
 
 /**
  * Runs the Shopee market research off the request/response cycle entirely, as a Netlify Background
@@ -65,12 +66,28 @@ export default async (req: Request) => {
     const category = research.categoryConfidence === "baixa" ? (listing.category ?? null) : (research.categoryPath.trim() || listing.category || null);
     const merged = mergeSuggestedAttributes(current, research.attributes);
 
+    // Never overwrite copy the seller already edited by hand — same rule the attribute merge follows.
+    const notesObj = listing.optimization_notes && typeof listing.optimization_notes === "object" ? listing.optimization_notes : {};
+    let title = listing.title ?? "";
+    let description = listing.description ?? "";
+    let benefits: string[] = [];
+    if (!notesObj.manuallyEdited) {
+      const { data: copy } = await generateShopeeCopy({
+        name: product.name, brand: product.brand, model: product.model, categoryPath: category,
+        confirmedAttributes: merged, supplierDescription: source.supplier_description, itemsIncluded: source.items_included,
+        weightKg: product.weight_kg, widthCm: product.width_cm, heightCm: product.height_cm, lengthCm: product.length_cm,
+        competitorTitles: competitors.map((c) => c.title).filter(Boolean).slice(0, 8),
+        conversionInsights: research.conversionInsights,
+      });
+      if (copy) { title = copy.title; description = copy.description; benefits = copy.benefits; }
+    }
+
     const [{ data: assets }, { data: pricing }] = await Promise.all([
       supabase.from("product_assets").select("asset_type").eq("product_id", productId).eq("marketplace", "shopee"),
       supabase.from("pricing_scenarios").select("sale_price").eq("product_id", productId).eq("marketplace", "shopee").eq("is_recommended", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
     ]);
     const score = scoreListing({
-      marketplace: "shopee", title: listing.title ?? "", description: listing.description ?? "",
+      marketplace: "shopee", title, description,
       keywords: listing.keywords ?? [], attributes: merged,
       categoryId: listing.marketplace_category_id ?? category ?? undefined,
       imageCount: (assets ?? []).filter((a: any) => a.asset_type === "image").length,
@@ -82,10 +99,10 @@ export default async (req: Request) => {
     });
 
     await supabase.from("listings").update({
-      category, attributes: merged, ...scoreFields(score), updated_at: new Date().toISOString(),
+      title, description, category, attributes: merged, ...scoreFields(score), updated_at: new Date().toISOString(),
       optimization_notes: preserveResearchAttempt(listing.optimization_notes, {
-        ...(listing.optimization_notes && typeof listing.optimization_notes === "object" ? listing.optimization_notes : {}),
-        blockers: score.blockers, recommendations: score.recommendations,
+        ...notesObj,
+        blockers: score.blockers, recommendations: score.recommendations, aiBenefits: benefits,
         aiMarketResearch: {
           status: "done", categoryPath: research.categoryPath, categoryConfidence: research.categoryConfidence, categoryReason: research.categoryReason,
           searchTerms: research.searchTerms, competitorCount: competitors.length, pricedCount: range.sampleSize,

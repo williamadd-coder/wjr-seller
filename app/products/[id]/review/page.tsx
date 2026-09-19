@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { optimizeShopee } from "../actions";
 import { updateListingContent } from "./actions";
-import { analyzeProductImages, startShopeeResearch } from "./ai-actions";
+import { analyzeProductImages, startShopeeResearch, generateMarketingImages } from "./ai-actions";
 import { AutoGenerate } from "./auto-generate";
 import { ResearchPoller } from "./research-poller";
 import { AttributesEditor } from "./attributes-editor";
@@ -12,7 +12,7 @@ import { getShopeePublicationReadiness } from "@/lib/marketplaces/shopee/readine
 const BUCKET = "product-media";
 const money = (v: number | null | undefined) => v == null ? "—" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v));
 
-export default async function ReviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ generate?: string; error?: string; saved?: string; updated?: string; analyzed?: string; researching?: string }> }) {
+export default async function ReviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ generate?: string; error?: string; saved?: string; updated?: string; analyzed?: string; researching?: string; imagesGenerated?: string }> }) {
   const { id } = await params;
   const query = await searchParams;
   const supabase = await createClient();
@@ -46,8 +46,10 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
   const optimize = optimizeShopee.bind(null, id);
   const analyzeImages = analyzeProductImages.bind(null, id);
   const startResearch = startShopeeResearch.bind(null, id);
+  const generateImages = generateMarketingImages.bind(null, id);
   const aiImagePlan = listing?.optimization_notes?.aiImagePlan;
   const aiResearch = listing?.optimization_notes?.aiMarketResearch;
+  const aiBenefits: string[] = listing?.optimization_notes?.aiBenefits ?? [];
   const researchPending = aiResearch?.status === "pending";
   const researchDone = !!aiResearch && aiResearch.status !== "pending" && aiResearch.status !== "error";
 
@@ -66,6 +68,7 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
     {query.updated === "1" && <div className="authAlert">Alterações salvas.</div>}
     {query.saved === "1" && <div className="authAlert">Anúncio publicado.</div>}
     {query.analyzed === "1" && <div className="authAlert">Análise das imagens concluída.</div>}
+    {query.imagesGenerated === "1" && <div className="authAlert">Imagens de marketing geradas e adicionadas ao anúncio.</div>}
     {researchDone && aiResearch.competitorCount === 0 && <div className="authAlert">A pesquisa não encontrou anúncios comparáveis na Shopee. Ajuste o nome ou a marca do produto e pesquise de novo.</div>}
     {aiResearch?.status === "error" && <div className="authAlert error">{aiResearch.message}</div>}
 
@@ -107,8 +110,8 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
           </section>
 
           <section className="formSection">
-            <div className="sectionTitle"><div className="eyebrow">Imagens do Anúncio</div><div className="packageActions"><span className="statusChip">{imageCount} imagem(ns)</span>{imageCount > 0 && <AiActionButton action={analyzeImages} label="Analisar imagens com IA" pendingLabel="Analisando imagens…" hint="A IA está olhando cada imagem. Isso leva alguns segundos." />}</div></div>
-            <p className="note">Clique em <b>Analisar imagens com IA</b> para a IA dizer qual foto usar como capa, o que está errado em cada uma (os avisos abaixo de cada imagem) e quais fotos ainda faltam. A geração de novas imagens por IA entra em uma etapa futura — por enquanto a IA só avalia o que você já enviou.</p>
+            <div className="sectionTitle"><div className="eyebrow">Imagens do Anúncio</div><div className="packageActions"><span className="statusChip">{imageCount} imagem(ns)</span>{imageCount > 0 && <AiActionButton action={analyzeImages} label="Analisar imagens com IA" pendingLabel="Analisando imagens…" hint="A IA está olhando cada imagem. Isso leva alguns segundos." />}{imageCount > 0 && <AiActionButton action={generateImages} label="Gerar imagens de marketing" pendingLabel="Gerando imagens…" hint="Montando capa, benefícios, medidas e itens inclusos a partir da sua foto." />}</div></div>
+            <p className="note">Clique em <b>Analisar imagens com IA</b> para a IA dizer qual foto usar como capa, o que está errado em cada uma (os avisos abaixo de cada imagem) e quais fotos ainda faltam. Clique em <b>Gerar imagens de marketing</b> para criar automaticamente as imagens secundárias que ajudam a vender (capa, benefícios, medidas e o que acompanha) usando a sua própria foto do produto — elas são adicionadas à galeria abaixo.</p>
             {imageCount > 0
               ? <div className="imageGrid">{signedImages.map((img, index) => {
                   const analysis = (aiImagePlan?.images ?? []).find((item: any) => item.index === index);
@@ -178,6 +181,12 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
           {(aiResearch?.conversionInsights ?? []).length > 0 && <section className="formSection">
             <div className="eyebrow">O que os mais vendidos fazem</div>
             {aiResearch.conversionInsights.map((insight: string) => <p className="note" key={insight}>• {insight}</p>)}
+          </section>}
+
+          {aiBenefits.length > 0 && <section className="formSection">
+            <div className="eyebrow">Benefícios em destaque</div>
+            <p className="note">Usados nas imagens de marketing geradas pela IA.</p>
+            {aiBenefits.map((b) => <p className="note" key={b}>✓ {b}</p>)}
           </section>}
 
           <section className="formSection">

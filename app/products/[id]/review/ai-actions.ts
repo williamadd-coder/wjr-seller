@@ -10,6 +10,7 @@ import { preserveResearchAttempt } from "@/lib/marketplaces/shopee/optimization-
 import { suggestShopeeClassification } from "@/lib/marketplaces/shopee/classification";
 import { mergeSuggestedAttributes } from "@/lib/marketplaces/shopee/attribute-merge";
 import { planShopeeImages, type ImageInput } from "@/lib/marketplaces/shopee/image-plan";
+import { generateMarketingImageSet } from "@/lib/marketplaces/shopee/generate-marketing-images";
 
 const BUCKET = "product-media";
 const MAX_ANALYZED_IMAGES = 5;
@@ -170,4 +171,65 @@ export async function analyzeProductImages(productId: string) {
 
   revalidatePath(`/products/${productId}/review`);
   redirect(`/products/${productId}/review?analyzed=1`);
+}
+
+const humanizeLabel = (k: string) => k.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+/**
+ * Builds the "secondary images that sell" set (capa, benefícios, medidas, o que acompanha) as new
+ * product photos — template-based (see generate-marketing-images.ts), using the seller's own uploaded
+ * photo, so the product shown is always exactly what's being sold.
+ */
+export async function generateMarketingImages(productId: string) {
+  const { supabase, product, listing } = await loadContext(productId);
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId = claims?.claims?.sub;
+  if (!userId) redirect("/login");
+
+  const { data: assets } = await supabase.from("product_assets").select("id,storage_path,metadata").eq("product_id", productId).eq("marketplace", "shopee").eq("asset_type", "image").order("created_at", { ascending: true }).limit(MAX_ANALYZED_IMAGES);
+  if (!assets?.length) fail(productId, "Envie ao menos uma imagem do produto antes de gerar as imagens de marketing.");
+
+  const notes = listing.optimization_notes && typeof listing.optimization_notes === "object" ? (listing.optimization_notes as any) : {};
+  const coverIndex: number = notes.aiImagePlan?.coverIndex ?? 0;
+  const cover = assets![Math.min(coverIndex, assets!.length - 1)];
+  const { data: file } = await supabase.storage.from(BUCKET).download(cover.storage_path);
+  if (!file) fail(productId, "Não foi possível ler a imagem do produto. Reenvie e tente novamente.");
+  const contentType = SUPPORTED_IMAGE_TYPES.find((type) => type === (file!.type || cover.metadata?.content_type)) ?? "image/jpeg";
+  const photoDataUrl = `data:${contentType};base64,${Buffer.from(await file!.arrayBuffer()).toString("base64")}`;
+
+  const source = product.source_data && typeof product.source_data === "object" ? (product.source_data as Record<string, any>) : {};
+  const rawIncluded = source.items_included;
+  const includedItems: string[] = (Array.isArray(rawIncluded) ? rawIncluded : String(rawIncluded ?? "").split(/\n|;/)).map((s: string) => String(s).trim()).filter(Boolean);
+
+  const benefits: string[] = Array.isArray(notes.aiBenefits) && notes.aiBenefits.length
+    ? notes.aiBenefits
+    : Object.entries((listing.attributes && typeof listing.attributes === "object" ? listing.attributes : {}) as Record<string, string>)
+        .filter(([, v]) => String(v ?? "").trim()).slice(0, 4).map(([k, v]) => `${humanizeLabel(k)}: ${v}`);
+
+  const specs = [
+    product.weight_kg ? { label: "Peso do pacote", value: `${product.weight_kg} kg` } : null,
+    product.width_cm ? { label: "Largura", value: `${product.width_cm} cm` } : null,
+    product.height_cm ? { label: "Altura", value: `${product.height_cm} cm` } : null,
+    product.length_cm ? { label: "Comprimento", value: `${product.length_cm} cm` } : null,
+  ].filter((s): s is { label: string; value: string } => s !== null);
+
+  let slides;
+  try {
+    slides = await generateMarketingImageSet({ productName: product.name, photoDataUrl, benefits, specs, includedItems });
+  } catch (err) {
+    fail(productId, `Não foi possível gerar as imagens agora. Tente novamente. (${err instanceof Error ? err.message : "erro desconhecido"})`);
+  }
+
+  for (const slide of slides!) {
+    const path = `${userId}/${productId}/marketing/${crypto.randomUUID()}-${slide.key}.png`;
+    const { error: storageError } = await supabase.storage.from(BUCKET).upload(path, slide.buffer, { contentType: "image/png", upsert: false });
+    if (storageError) continue;
+    await supabase.from("product_assets").insert({
+      product_id: productId, asset_type: "image", storage_path: path, marketplace: "shopee",
+      metadata: { name: `${slide.key}.png`, content_type: "image/png", generated: true, template: slide.key, label: slide.label },
+    });
+  }
+
+  revalidatePath(`/products/${productId}/review`);
+  redirect(`/products/${productId}/review?imagesGenerated=1`);
 }
