@@ -44,6 +44,8 @@ export type MarketResearchSeed = {
  * can afford a few search rounds for better accuracy instead of betting everything on one query.
  */
 const SEARCH_TOOL = { type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 3, user_location: { type: "approximate" as const, country: "BR", timezone: "America/Sao_Paulo" } };
+/** Search result snippets rarely show price — fetching the actual listing page is what surfaces it. */
+const FETCH_TOOL = { type: "web_fetch_20260209" as const, name: "web_fetch" as const, max_uses: 6, max_content_tokens: 6000, allowed_domains: ["shopee.com.br"] };
 /** Safety net against the Anthropic call itself hanging — well inside the background function's 15-minute budget. */
 const REQUEST_TIMEOUT_MS = 120000;
 
@@ -51,10 +53,12 @@ const SYSTEM = `Você pesquisa anúncios reais da Shopee Brasil para quem vai ca
 
 Use a ferramenta de busca na web (até 3 buscas) para encontrar anúncios do MESMO produto (ou do mais parecido possível) na Shopee Brasil. Comece pelo termo mais específico (nome + marca + modelo) e só use termos mais genéricos se o primeiro não trouxer resultado.
 
+Os resultados da busca raramente mostram o preço — isso só aparece na página do anúncio. Por isso, depois de achar os candidatos, use a ferramenta de fetch (até 6 vezes) para ABRIR as páginas dos anúncios mais relevantes (shopee.com.br) e ler o preço real exibido nelas antes de decidir o valor de "price". Só deixe price null se o fetch falhar ou a página realmente não mostrar preço.
+
 Com base apenas no que você realmente encontrou, responda:
 1. "categoryPath": o caminho COMPLETO da categoria como a Shopee Brasil exibe, com " > " entre os níveis (exemplo de formato: "Mãe e Bebê > Brinquedos > Veículos de Brinquedo"). Use a nomenclatura real da Shopee e a profundidade que os anúncios encontrados mostram.
 2. "categoryConfidence": "alta" quando os anúncios encontrados mostram a categoria, "media" quando você deduziu pela navegação da Shopee, "baixa" quando não encontrou anúncios comparáveis.
-3. "competitors": os anúncios comparáveis encontrados, com título, URL, preço de venda em reais (apenas o número, sem "R$"), nome da loja e quantidade vendida. Use price null quando o preço não estiver visível. Nunca invente preço, URL ou loja.
+3. "competitors": os anúncios comparáveis encontrados, com título, URL, preço de venda em reais (apenas o número, sem "R$"), nome da loja e quantidade vendida. Use price null apenas quando o fetch da página falhar ou o preço realmente não estiver visível nela. Nunca invente preço, URL ou loja.
 4. "attributes": os atributos que a Shopee pede nessa categoria (marque "required" nos obrigatórios). Preencha "value" com basis "evidencia" só quando as evidências do produto sustentarem o valor, "inferido" quando for dedução e "desconhecido" com value vazio quando não houver como saber.
 5. "conversionInsights": o que os anúncios que mais vendem fazem no título, nas imagens e na descrição.
 6. "summary": uma frase em português resumindo a pesquisa.
@@ -82,7 +86,7 @@ export async function researchShopeeMarket(seed: MarketResearchSeed): Promise<{ 
       model: AI_MODEL,
       max_tokens: 8000,
       system: SYSTEM,
-      tools: [SEARCH_TOOL],
+      tools: [SEARCH_TOOL, FETCH_TOOL],
       messages: [{ role: "user", content: seedText(seed) }],
       output_config: { format: zodOutputFormat(ResearchSchema) },
     }, { timeout: REQUEST_TIMEOUT_MS, maxRetries: 0 });
